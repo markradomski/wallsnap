@@ -35,7 +35,7 @@ describe('WallSnapAdapter (mock gateway, synthetic geometry)', () => {
     const again = await adapter.apply('f_first', 'fl_north', { ...art, u: 400 }, first.rev)
     expect(again.created).toBe(false)
     expect(again.artwork.u).toBeCloseTo(400)
-    expect(rec.calls.filter((c) => c.tool === 'place_item')).toHaveLength(1)
+    expect(rec.calls.filter((c) => c.tool === 'place_on_wall' && c.args.catalog_id)).toHaveLength(1)
   })
 
   it('measures u from endpoint A on a wall stored in the opposite direction', async () => {
@@ -43,16 +43,25 @@ describe('WallSnapAdapter (mock gateway, synthetic geometry)', () => {
     const s = await adapter.loadWall('f_first', 'fl_south')
     const r = await adapter.apply('f_first', 'fl_south', { ...art, u: 300 }, s.rev)
     expect(r.artwork.u).toBeCloseTo(300)
-    const placed = rec.calls.find((c) => c.tool === 'place_item')!.args
-    expect(placed.at).toEqual({ x: 400, y: 500 - 7.5 - 1.5 })
-    expect(placed.rotation).toBe(180)
+    const moves = rec.calls.filter((c) => c.tool === 'place_on_wall')
+    expect(moves.at(-1)!.args).toMatchObject({ wall_id: 'fl_south', offset: 300, elevation: 120 })
+    const item = (await mock.call('list_entities', { floor: 'f_first', type: ['item'] })).data as { rows: { x: number; y: number; rotation: number }[] }
+    expect(item.rows[0]).toMatchObject({ x: 400, y: 500 - 7.5 - 1.5, rotation: 180 })
   })
 
   it('keeps the same u meaning on a wall running the other way', async () => {
     const n = await adapter.loadWall('f_first', 'fl_north') // A(100,100) -> B(700,100)
     await adapter.apply('f_first', 'fl_north', { ...art, u: 100 }, n.rev)
-    const at = rec.calls.find((c) => c.tool === 'place_item')!.args.at
-    expect(at).toEqual({ x: 200, y: 100 + 7.5 + 1.5 })
+    const item = (await mock.call('list_entities', { floor: 'f_first', type: ['item'] })).data as { rows: { x: number; y: number }[] }
+    expect(item.rows[0]).toMatchObject({ x: 200, y: 100 + 7.5 + 1.5 })
+  })
+
+  it('hangs near a wall end by resizing first, then moving to the exact u', async () => {
+    const s = await adapter.loadWall('f_first', 'fl_north')
+    const r = await adapter.apply('f_first', 'fl_north', { width: 40, height: 30, u: 25, v: 150 }, s.rev)
+    expect(r.artwork.u).toBeCloseTo(25)
+    const moves = rec.calls.filter((c) => c.tool === 'place_on_wall')
+    expect(moves.map((c) => c.args.offset)).toEqual([50, 25])
   })
 
   it('places openings by u as well', async () => {

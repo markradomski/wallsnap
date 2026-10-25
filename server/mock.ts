@@ -1,4 +1,5 @@
-import { isRec } from './boundary'
+import { flushPerp, planPoint, facingRotation, wallFrame } from '../src/geometry'
+import { isRec, parseRoom, parseWall } from './boundary'
 import { ENTITIES, FLOORS } from './fixture'
 import { GatewayError, type Gateway, type ToolResult } from './gateway'
 
@@ -63,15 +64,24 @@ export class MockGateway implements Gateway {
             ]
         return { rev: this.rev, data: { rows: structuredClone(rows) } }
       }
-      case 'place_item': {
+      case 'place_on_wall': {
         this.checkRev(tool, a)
-        const at = isRec(a.at) ? a.at : {}
-        const item: MockItem = {
-          id: `i_mock${++this.seq}`, floor, x: this.num(tool, at.x, 'x'), y: this.num(tool, at.y, 'y'),
-          rotation: this.num(tool, a.rotation ?? 0, 'rotation'), width: 100, height: 70, depth: 3,
-          elevation: this.num(tool, a.elevation ?? 0, 'elevation'),
+        const rows = ENTITIES[floor] ?? []
+        const wall = parseWall(rows.find((r) => r.id === a.wall_id) ?? this.fail(tool, 'no such wall'))
+        const room = rows.map((r) => (r.type === 'room' ? parseRoom(r) : null)).find((r) => r?.key === a.face_room)
+        if (!room) this.fail(tool, 'no such room')
+        const frame = wallFrame(wall.a, wall.b, room.centroid)
+        const offset = this.num(tool, a.offset, 'offset')
+        const elevation = this.num(tool, a.elevation, 'elevation')
+        const existing = typeof a.item_id === 'string' ? this.items.find((i) => i.id === a.item_id) : undefined
+        if (typeof a.item_id === 'string' && !existing) this.fail(tool, `no item ${a.item_id}`)
+        const item: MockItem = existing ?? {
+          id: `i_mock${++this.seq}`, floor, x: 0, y: 0, rotation: 0, width: 100, height: 70, depth: 3, elevation: 0,
         }
-        this.items.push(item)
+        if (offset - item.width / 2 < 0 || offset + item.width / 2 > frame.length) this.fail(tool, 'item would overhang the wall')
+        const p = planPoint(frame, offset, flushPerp(wall.thickness, item.depth))
+        Object.assign(item, { x: p.x, y: p.y, rotation: facingRotation(frame.normal), elevation })
+        if (!existing) this.items.push(item)
         this.rev++
         return { rev: this.rev, data: { item_id: item.id } }
       }

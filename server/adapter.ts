@@ -1,6 +1,4 @@
-import {
-  facingRotation, flushPerp, planPoint, validate, wallCoords, wallFrame, type WallFrame,
-} from '../src/geometry'
+import { flushPerp, validate, wallCoords, wallFrame, type WallFrame } from '../src/geometry'
 import type { ApplyResult, Artwork, FloorSummary, Opening, WallState } from '../src/types'
 import {
   BoundaryError, arr, id, isRec, parseFloor, parseItem, parseOpening, parseRoom, parseWall, rec,
@@ -17,7 +15,7 @@ export class ValidationError extends Error {
 
 const TAG = 'wallsnap'
 const CATALOG_ID = 'picture-large' // 100x3x70 cm catalogue picture, resized to the requested size
-const CATALOG_DEPTH = 3
+const CATALOG_WIDTH = 100
 /** Heuristic for the reserved studio wall: ground-floor walls at least this long are not offered. */
 const RESERVED_MIN_LENGTH = 650
 /** Tolerances for read-back verification (cm). */
@@ -124,25 +122,31 @@ export class WallSnapAdapter {
     const problems = validate({ length: r.frame.length, height: r.wall.height, openings: r.openings }, art)
     if (problems.length) throw new ValidationError(problems)
 
-    const pos = planPoint(r.frame, art.u, flushPerp(r.wall.thickness, r.item?.depth ?? CATALOG_DEPTH))
-    const fields = {
-      x: pos.x, y: pos.y, rotation: facingRotation(r.frame.normal),
-      width: art.width, height: art.height, elevation: art.v,
-    }
     const base = { project: this.project, floor: floorId }
+    const hang = { wall_id: wallId, face_room: r.room.key }
+    // FloorGen's own wall placement sets flush contact and facing; the catalogue picture is 100 cm wide
+    // until resized, so hang it where it fits first, resize, then move to the exact u if that differs.
+    const firstU = r.item ? art.u : Math.min(Math.max(art.u, CATALOG_WIDTH / 2), r.frame.length - CATALOG_WIDTH / 2)
     let rev = r.rev
     let created = false
+    let itemId: string
 
     if (r.item) {
-      rev = (await this.gw.call('update_items', { ...base, id: r.item.id, ...fields, expected_rev: rev })).rev
+      itemId = r.item.id
+      rev = (await this.gw.call('place_on_wall', { ...base, ...hang, item_id: itemId, offset: firstU, elevation: art.v, expected_rev: rev })).rev
     } else {
       created = true
-      const placed = await this.gw.call('place_item', {
-        ...base, catalog_id: CATALOG_ID, room: r.room.key, at: { x: pos.x, y: pos.y },
-        rotation: fields.rotation, elevation: art.v, snap: false, name: 'WallSnap artwork', expected_rev: rev,
+      const placed = await this.gw.call('place_on_wall', {
+        ...base, ...hang, catalog_id: CATALOG_ID, offset: firstU, elevation: art.v, name: 'WallSnap artwork', expected_rev: rev,
       })
-      const itemId = id(rec(placed.data, 'place_item data').item_id, 'item_id')
-      rev = (await this.gw.call('update_items', { ...base, id: itemId, ...fields, tag: TAG, expected_rev: placed.rev })).rev
+      itemId = id(rec(placed.data, 'place_on_wall data').item_id, 'item_id')
+      rev = placed.rev
+    }
+    rev = (await this.gw.call('update_items', {
+      ...base, id: itemId, width: art.width, height: art.height, tag: TAG, expected_rev: rev,
+    })).rev
+    if (Math.abs(firstU - art.u) > 1e-9) {
+      rev = (await this.gw.call('place_on_wall', { ...base, ...hang, item_id: itemId, offset: art.u, elevation: art.v, expected_rev: rev })).rev
     }
 
     // Success is reported only if a fresh read shows what was asked for.

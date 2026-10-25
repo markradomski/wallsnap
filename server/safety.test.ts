@@ -26,7 +26,10 @@ describe('write guard: rejected writes never reach the transport', () => {
 
   it('forwards a write to the writable project', async () => {
     const { transport, gw } = setup('mock-project')
-    await gw.call('place_item', { project: 'mock-project', floor: 'f_first', at: { x: 1, y: 1 } })
+    await gw.call('place_on_wall', {
+      project: 'mock-project', floor: 'f_first', wall_id: 'fl_north', face_room: 'fl_north|fl_east|fl_south|fl_west',
+      catalog_id: 'picture-large', offset: 300, elevation: 100,
+    })
     expect(transport.writes()).toHaveLength(1)
   })
 
