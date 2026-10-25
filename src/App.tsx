@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import styles from './App.module.css'
 import { ApiError, getFloors, getStatus, getWall, putArtwork } from './api'
 import { Elevation } from './Elevation'
 import { clampToWall, round1, validate } from './geometry'
+import { DEFAULT_IMAGE_WIDTH_CM, acceptImageFile, decodeImage, frameForRatio, ratioDiffers } from './image'
+import { createImageStore, draftKey, idbKV, itemKey } from './imageStore'
 import { Inspector, type FieldKey } from './Inspector'
 import { deriveSaveState, sameArtwork } from './saveState'
 import { useTheme } from './theme'
@@ -13,6 +15,11 @@ const DEFAULT_ART: Artwork = { width: 60, height: 45, u: 0, v: 120 }
 const KEYS: FieldKey[] = ['width', 'height', 'u', 'v']
 
 type Result = { kind: 'ok' | 'error'; text: string }
+/** The local artwork image shown for the current wall. `key` is where it is stored (artwork item id, or a wall draft). */
+interface ArtImage { key: string; url: string; name: string; width: number; height: number; ratio: number }
+
+const DAMAGED = 'The saved image for this artwork could not be read; it may be damaged. Choose a replacement image.'
+const STORAGE_OFF = 'Saved images are unavailable in this browser (storage is blocked), so the image cannot be shown.'
 
 const format = (a: Artwork): Record<string, string> => Object.fromEntries(KEYS.map((k) => [k, String(round1(a[k]))]))
 
@@ -23,6 +30,7 @@ export function App() {
   const [theme, setTheme] = useTheme()
   const [adapter, setAdapter] = useState('')
   const [viewerUrl, setViewerUrl] = useState<string | null>(null)
+  const [projectId, setProjectId] = useState('')
   const [floors, setFloors] = useState<FloorSummary[]>([])
   const [floorId, setFloorId] = useState('')
   const [wallId, setWallId] = useState('')
@@ -39,6 +47,13 @@ export function App() {
   const [conflict, setConflict] = useState<string | null>(null)
   const [partial, setPartial] = useState<string | null>(null)
   const [verified, setVerified] = useState(false)
+  const store = useMemo(() => createImageStore(idbKV), [])
+  const [image, setImage] = useState<ArtImage | null>(null)
+  const [imageNote, setImageNote] = useState<string | null>(null)
+  const [imageBusy, setImageBusy] = useState(false)
+  const [lock, setLock] = useState(true)
+  const shownKey = useRef<string | null>(null)
+  const urlRef = useRef<string | null>(null)
 
   const fail = (e: unknown, prefix = '') => {
     const text = e instanceof Error ? e.message : 'Unexpected error'
@@ -51,6 +66,7 @@ export function App() {
     Promise.all([getStatus(), getFloors()])
       .then(([s, f]) => {
         setAdapter(s.adapter)
+        setProjectId(s.project)
         setViewerUrl(s.viewer3dUrl?.startsWith('https://floorgen.app/') ? s.viewer3dUrl : null)
         setFloors(f)
         const first = f.find((x) => x.walls.some((w) => !w.reserved))
@@ -59,6 +75,47 @@ export function App() {
       .catch((e) => fail(e))
       .finally(() => setLoading(false))
   }, [])
+
+  /** Show (or clear) the image, releasing the previous object URL only if it is really being replaced. */
+  const showImage = (img: ArtImage | null) => {
+    if (urlRef.current && urlRef.current !== img?.url) URL.revokeObjectURL(urlRef.current)
+    urlRef.current = img?.url ?? null
+    shownKey.current = img?.key ?? null
+    setImage(img)
+  }
+  useEffect(() => () => { if (urlRef.current) URL.revokeObjectURL(urlRef.current) }, [])
+
+  /** Where this wall's image lives: the saved artwork's id once it has one, otherwise a local draft for the wall. */
+  const imageKey = projectId && state
+    ? state.artworkId ? itemKey(projectId, state.artworkId) : draftKey(projectId, state.wall.floorId, state.wall.id)
+    : null
+
+  useEffect(() => {
+    if (!imageKey) {
+      showImage(null)
+      setImageNote(null)
+      return
+    }
+    if (shownKey.current === imageKey) return // already showing it (e.g. a draft that Apply just re-keyed)
+    let cancelled = false
+    showImage(null)
+    setImageNote(null)
+    store.get(imageKey).then(async (r) => {
+      if (cancelled) return
+      if (!r.ok) return setImageNote(r.reason === 'corrupt' ? DAMAGED : STORAGE_OFF)
+      if (!r.value) return
+      try {
+        await decodeImage(r.value.blob) // stored bytes can be damaged: never hand them to the canvas undecoded
+      } catch {
+        if (!cancelled) setImageNote(DAMAGED)
+        return
+      }
+      if (cancelled) return
+      const { blob, name, width, height } = r.value
+      showImage({ key: imageKey, url: URL.createObjectURL(blob), name, width, height, ratio: width / height })
+    })
+    return () => { cancelled = true }
+  }, [imageKey, store])
 
   const clearOutcome = () => {
     setResult(null)
@@ -110,7 +167,16 @@ export function App() {
   const typed = (key: FieldKey, value: string) => {
     setText((t) => ({ ...t, [key]: value }))
     const n = Number(value)
-    if (value.trim() !== '' && Number.isFinite(n) && art) edit({ ...art, [key]: n }, false) // keep what is being typed
+    if (!(value.trim() !== '' && Number.isFinite(n) && art)) return
+    if (image && lock && (key === 'width' || key === 'height') && n > 0) {
+      // Locked proportions: the other dimension follows, using the frame's current ratio.
+      const ratio = art.width / art.height
+      const next = { ...art, [key]: n, ...(key === 'width' ? { height: round1(n / ratio) } : { width: round1(n * ratio) }) }
+      edit(next, false)
+      setText({ ...format(next), [key]: value }) // the other dimension follows; what is being typed stays as typed
+      return
+    }
+    edit({ ...art, [key]: n }, false) // keep what is being typed
   }
   const parsed = useMemo(
     () => Object.fromEntries(KEYS.map((k) => [k, text[k] === undefined || text[k].trim() === '' ? NaN : Number(text[k])])) as unknown as Artwork,
@@ -125,7 +191,14 @@ export function App() {
     setSaving(true)
     clearOutcome()
     putArtwork(state.wall.floorId, state.wall.id, parsed, state.rev, state.artworkId)
-      .then((r) => {
+      .then(async (r) => {
+        // The artwork now has a persistent id: a wall draft image becomes that artwork's image (local only).
+        const newKey = itemKey(projectId, r.artworkId)
+        if (image && image.key !== newKey) {
+          const moved = await store.move(image.key, newKey)
+          showImage({ ...image, key: newKey })
+          if (!moved.ok) setImageNote('The image is shown now but could not be kept for later in this browser storage.')
+        }
         setState({ ...state, rev: r.rev, artwork: r.artwork, artworkId: r.artworkId, detached: null })
         setArt(r.artwork)
         setBase(r.artwork)
@@ -158,6 +231,39 @@ export function App() {
     const d = state?.detached
     if (!state || !d) return
     edit(clampToWall(state.wall, { width: d.width, height: d.height, u: state.wall.length / 2, v: d.elevation }))
+  }
+
+  /** Choose or replace the artwork image. Validation failures leave any existing image untouched. */
+  const pickImage = async (file: File) => {
+    if (!imageKey || !state) return
+    setImageBusy(true)
+    setImageNote(null)
+    try {
+      const accepted = await acceptImageFile(file)
+      if (!accepted.ok) return setImageNote(accepted.message)
+      const { blob, name, type, width, height } = accepted
+      const saved = await store.put(imageKey, { blob, name, type, width, height })
+      if (!saved.ok) {
+        setImageNote(saved.reason === 'full'
+          ? 'Browser storage is full: the image is shown now but will not be there after a reload.'
+          : 'Browser storage is unavailable: the image is shown now but will not be there after a reload.')
+      }
+      showImage({ key: imageKey, url: URL.createObjectURL(blob), name, width, height, ratio: width / height })
+      setLock(true)
+      if (art) {
+        // Frame from the image's aspect ratio (pixels do not mean centimetres): a first image on a fresh draft gets the
+        // default width; an existing or already-edited artwork keeps its current width.
+        const keepWidth = !!state.artworkId || (!!base && !sameArtwork(art, base))
+        const frame = frameForRatio(state.wall, width / height, keepWidth ? art.width : DEFAULT_IMAGE_WIDTH_CM)
+        edit(clampToWall(state.wall, { ...art, ...frame }))
+      }
+    } finally {
+      setImageBusy(false)
+    }
+  }
+  const matchRatio = () => {
+    if (!state || !art || !image) return
+    edit(clampToWall(state.wall, { ...art, ...frameForRatio(state.wall, image.ratio, art.width) }))
   }
 
   const save = deriveSaveState({
@@ -213,7 +319,14 @@ export function App() {
               </div>
               <div className={styles.stage}>
                 <div className={styles.canvas} style={{ ['--aspect' as string]: state.wall.length / state.wall.height }}>
-                  <Elevation wall={state.wall} artwork={art} onChange={edit} />
+                  <Elevation
+                    wall={state.wall}
+                    artwork={art}
+                    image={image?.url ?? null}
+                    lockRatio={!!image && lock}
+                    onImageError={() => { showImage(null); setImageNote(DAMAGED) }}
+                    onChange={edit}
+                  />
                 </div>
               </div>
             </>
@@ -242,6 +355,14 @@ export function App() {
             onDiscardAndReload={doReload}
             onKeepEditing={() => setConfirmReload(false)}
             viewerUrl={viewerUrl}
+            image={image}
+            imageNote={imageNote}
+            imageBusy={imageBusy}
+            onPickImage={pickImage}
+            lockRatio={lock}
+            onLockRatio={setLock}
+            ratioMismatch={!!image && !!art && ratioDiffers(parsed.width, parsed.height, image.ratio)}
+            onMatchRatio={matchRatio}
           />
         )}
       </div>

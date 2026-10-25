@@ -342,3 +342,119 @@ describe('offWallReasons', () => {
     expect(p).toEqual(copy)
   })
 })
+
+describe('proportional resize (resizeFromHandle with keepRatio)', () => {
+  const dims = { length: 600, height: 250 }
+  const a: Artwork = { width: 80, height: 100, u: 300, v: 60 } // ratio 0.8; u 260..340, v 60..160
+  const ratio = (r: Artwork) => r.width / r.height
+  const lock = (h: Handle, to: { u: number; v: number }, art = a) => resizeFromHandle(dims, art, h, to, true)
+
+  it.each<[Handle, { u: number; v: number }, { u0: number; v0: number; u1: number; v1: number }]>([
+    // The opposite corner never moves; the pointer picks the larger of the two requested scales.
+    ['ne', { u: 420, v: 200 }, { u0: 260, v0: 60, u1: 420, v1: 260 }],
+    ['nw', { u: 180, v: 200 }, { u0: 180, v0: 60, u1: 340, v1: 260 }],
+    ['se', { u: 420, v: 10 }, { u0: 260, v0: 10, u1: 420, v1: 160 }],
+    ['sw', { u: 180, v: 10 }, { u0: 180, v0: 10, u1: 340, v1: 160 }],
+  ])('%s corner keeps the ratio and the opposite corner', (h, to, want) => {
+    const r = lock(h, to)
+    expect(ratio(r)).toBeCloseTo(0.8, 12)
+    const e = extent(r)
+    // The anchored corner is unchanged.
+    if (h.includes('e')) expect(e.u0).toBeCloseTo(260, 9)
+    if (h.includes('w')) expect(e.u1).toBeCloseTo(340, 9)
+    if (h.includes('n')) expect(e.v0).toBeCloseTo(60, 9)
+    if (h.includes('s')) expect(e.v1).toBeCloseTo(160, 9)
+    expect(r.width).toBeGreaterThan(80)
+    // The anchored corner fixes where the rectangle starts; the far corner is clamped only by the wall and ratio.
+    expect(want.u1 - want.u0).toBeGreaterThan(0)
+  })
+
+  it('a corner follows the dominant pointer axis', () => {
+    // Pointer far to the right but barely up: width drives the scale.
+    const wide = lock('ne', { u: 400, v: 165 })
+    expect(wide.width).toBeCloseTo(140, 9)
+    expect(ratio(wide)).toBeCloseTo(0.8, 12)
+    // Pointer barely right but far up: height drives the scale.
+    const tall = lock('ne', { u: 345, v: 200 })
+    expect(tall.height).toBeCloseTo(140, 9)
+    expect(ratio(tall)).toBeCloseTo(0.8, 12)
+  })
+
+  it('east/west edges keep the opposite edge and grow the height about the vertical centre', () => {
+    const r = lock('e', { u: 420, v: 0 }) // width 80 -> 160, so height 100 -> 200
+    expect(extent(r).u0).toBeCloseTo(260, 9)
+    expect(r.width).toBeCloseTo(160, 9)
+    expect(r.height).toBeCloseTo(200, 9)
+    expect(r.v + r.height / 2).toBeCloseTo(110, 9) // centre height unchanged (v 60 + 50)
+    const w = lock('w', { u: 180, v: 0 })
+    expect(extent(w).u1).toBeCloseTo(340, 9)
+    expect(w.height).toBeCloseTo(200, 9)
+  })
+
+  it('north/south edges keep the opposite edge and grow the width about the centre', () => {
+    const n = lock('n', { u: 0, v: 210 }) // height 100 -> 150
+    expect(extent(n).v0).toBeCloseTo(60, 9)
+    expect(n.height).toBeCloseTo(150, 9)
+    expect(n.width).toBeCloseTo(120, 9)
+    expect(n.u).toBeCloseTo(300, 9)
+    const s = lock('s', { u: 0, v: 10 })
+    expect(extent(s).v1).toBeCloseTo(160, 9)
+    expect(s.width).toBeCloseTo(0.8 * 150, 9)
+  })
+
+  it('stops at the wall boundary while still preserving the ratio', () => {
+    const toEdge = lock('se', { u: 9999, v: -9999 })
+    expect(extent(toEdge).u1).toBeLessThanOrEqual(600 + 1e-9)
+    expect(ratio(toEdge)).toBeCloseTo(0.8, 12)
+    const left = lock('sw', { u: -9999, v: -9999 })
+    expect(extent(left).u0).toBeGreaterThanOrEqual(-1e-9)
+    expect(extent(left).v0).toBeGreaterThanOrEqual(-1e-9)
+    expect(ratio(left)).toBeCloseTo(0.8, 12)
+  })
+
+  it('respects the 200 cm height limit by shrinking both dimensions together', () => {
+    const r = lock('n', { u: 0, v: 9999 })
+    expect(r.height).toBeLessThanOrEqual(200 + 1e-9)
+    expect(ratio(r)).toBeCloseTo(0.8, 12)
+  })
+
+  it('cannot collapse below 1 cm or flip through the anchor', () => {
+    const r = lock('se', { u: -9999, v: 9999 })
+    expect(Math.min(r.width, r.height)).toBeGreaterThanOrEqual(1 - 1e-9)
+    expect(ratio(r)).toBeCloseTo(0.8, 12)
+    expect(extent(r).u0).toBeCloseTo(260, 9)
+  })
+
+  it('works for wide and tall ratios and on a wall too small for the frame', () => {
+    const panorama: Artwork = { width: 200, height: 50, u: 300, v: 100 }
+    expect(ratio(lock('se', { u: 500, v: 0 }, panorama))).toBeCloseTo(4, 12)
+    const tiny = resizeFromHandle({ length: 60, height: 60 }, { width: 20, height: 40, u: 30, v: 10 }, 'e', { u: 999, v: 0 }, true)
+    expect(tiny.width / tiny.height).toBeCloseTo(0.5, 12)
+    expect(validate({ length: 60, height: 60, openings: [] }, tiny)).toEqual([])
+  })
+
+  it('for every handle and many pointer positions: ratio exact, inside the wall, valid', () => {
+    const wallFull = { ...dims, openings: [] }
+    const handles: Handle[] = ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw']
+    for (const h of handles) {
+      for (const u of [-500, 0, 150, 260, 300, 340, 450, 700, 5000]) {
+        for (const v of [-500, 0, 40, 60, 110, 160, 250, 400, 5000]) {
+          const r = resizeFromHandle(dims, a, h, { u, v }, true)
+          expect(ratio(r), `${h} ${u},${v}`).toBeCloseTo(0.8, 9)
+          expect(validate(wallFull, r), `${h} ${u},${v}`).toEqual([])
+        }
+      }
+    }
+  })
+
+  it('without keepRatio the free behaviour is unchanged', () => {
+    expect(resizeFromHandle(dims, a, 'e', { u: 420, v: 0 })).toMatchObject({ width: 160, height: 100 })
+  })
+
+  it('works on repeated drags (no drift): rescaling then returning gives the original', () => {
+    const big = lock('se', { u: 420, v: 10 })
+    const back = lock('se', { u: 340, v: 60 }, big)
+    expect(back.width).toBeCloseTo(80, 6)
+    expect(back.height).toBeCloseTo(100, 6)
+  })
+})

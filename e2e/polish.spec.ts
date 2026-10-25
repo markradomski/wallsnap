@@ -274,12 +274,18 @@ test('tablet width: stacked layout, no overflow, inspector reachable', async ({ 
   await expect(page.getByRole('button', { name: 'Apply to FloorGen' })).toBeVisible()
 })
 
-test('phone: wall, inspector and Apply fit on one 390x844 screen', async ({ page }) => {
+test('phone: the editor starts at the top and Apply stays within one short scroll', async ({ page }) => {
+  // The artwork-image section adds controls, so the whole inspector no longer fits one 844 px screen. The drawing and the
+  // numeric fields stay on the first screen; Apply is reachable a short scroll below.
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/')
   await pickWall(page, 'north wall, 600 cm')
+  const stage = (await page.getByTestId('elevation').boundingBox())!
+  expect(stage.y).toBeLessThan(220)
   const apply = (await page.getByRole('button', { name: 'Apply to FloorGen' }).boundingBox())!
-  expect(apply.y + apply.height).toBeLessThanOrEqual(844)
+  expect(apply.y + apply.height).toBeLessThanOrEqual(844 * 1.25)
+  await page.getByRole('button', { name: 'Apply to FloorGen' }).scrollIntoViewIfNeeded()
+  await expect(page.getByRole('button', { name: 'Apply to FloorGen' })).toBeVisible()
 })
 
 test('loading a wall never flashes empty inputs or a spurious "invalid" state', async ({ page }) => {
@@ -290,7 +296,7 @@ test('loading a wall never flashes empty inputs or a spurious "invalid" state', 
     new MutationObserver(() => {
       const s = document.querySelector('[data-testid=save-status]')?.getAttribute('data-state')
       if (s) seen.add(s)
-      document.querySelectorAll('form input').forEach((i) => !(i as HTMLInputElement).value && seen.add('empty-input'))
+      document.querySelectorAll('form input[inputmode=decimal]').forEach((i) => !(i as HTMLInputElement).value && seen.add('empty-input'))
     }).observe(document, { subtree: true, childList: true, attributes: true, characterData: true })
   })
   await page.goto('/')

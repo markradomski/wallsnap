@@ -1,5 +1,6 @@
 import styles from './Inspector.module.css'
 import { SAVE_GLYPH, SAVE_LABEL, type SaveState } from './saveState'
+import { ALLOWED_TYPES, TYPE_LABEL } from './image'
 import type { Artwork, Detached } from './types'
 
 export type FieldKey = keyof Artwork
@@ -32,6 +33,16 @@ interface Props {
   onDiscardAndReload: () => void
   onKeepEditing: () => void
   viewerUrl: string | null
+  /** The local artwork image (never sent to FloorGen). */
+  image: { url: string; name: string; width: number; height: number } | null
+  imageNote: string | null
+  imageBusy: boolean
+  onPickImage: (file: File) => void
+  lockRatio: boolean
+  onLockRatio: (v: boolean) => void
+  /** True when the frame is a different shape from the image, so the image is shown fitted with the frame showing. */
+  ratioMismatch: boolean
+  onMatchRatio: () => void
 }
 
 function Field({ f, text, valid, onType, disabled }: { f: { key: FieldKey; label: string } } & Pick<Props, 'text' | 'valid' | 'onType' | 'disabled'>) {
@@ -103,6 +114,62 @@ export function Inspector(p: Props) {
           <span aria-hidden="true">{SAVE_GLYPH[p.save]}</span> <span data-testid="message">{p.detail}</span>
         </p>
       )}
+
+      <fieldset className={styles.imageBox}>
+        <legend>Artwork image</legend>
+        <div className={styles.imageRow}>
+          {p.image ? (
+            <img className={styles.thumb} src={p.image.url} alt="Artwork thumbnail" data-testid="thumbnail" />
+          ) : (
+            <span className={styles.thumbEmpty} aria-hidden="true" />
+          )}
+          <div className={styles.imageMeta} data-testid="image-meta">
+            {p.image ? (
+              <>
+                <span className={styles.fileName} title={p.image.name}>{p.image.name}</span>
+                <span>{p.image.width} × {p.image.height} px · ratio {(p.image.width / p.image.height).toFixed(2)}</span>
+              </>
+            ) : (
+              <span>No image. The artwork is a plain rectangle.</span>
+            )}
+          </div>
+        </div>
+        <div className={styles.imageActions}>
+          <label className={styles.filePick} aria-disabled={p.imageBusy}>
+            <input
+              type="file"
+              className={styles.srOnly}
+              accept={ALLOWED_TYPES.join(',')}
+              aria-label="Artwork image file"
+              disabled={p.imageBusy}
+              data-testid="image-input"
+              onChange={(e) => {
+                const f = e.target.files?.[0]
+                e.target.value = '' // so choosing the same file again still fires
+                if (f) p.onPickImage(f)
+              }}
+            />
+            <span>{p.imageBusy ? 'Checking image…' : p.image ? 'Replace image…' : 'Choose image…'}</span>
+          </label>
+          {p.image && (
+            <label className={styles.check}>
+              <input type="checkbox" checked={p.lockRatio} onChange={(e) => p.onLockRatio(e.target.checked)} />
+              Lock proportions
+            </label>
+          )}
+        </div>
+        {p.imageNote && <p className={styles.imageNote} role="alert" data-testid="image-note">{p.imageNote}</p>}
+        {p.image && p.ratioMismatch && (
+          <p className={styles.help} data-testid="ratio-note">
+            The frame is a different shape from the image, so the image is shown whole inside it (not cropped or stretched).{' '}
+            <button type="button" className={styles.linkish} onClick={p.onMatchRatio}>Match image proportions</button>
+          </p>
+        )}
+        <p className={styles.help} data-testid="image-storage-note">
+          {TYPE_LABEL}, up to 15 MB. Stored in this browser only: FloorGen receives the artwork's size and position, and custom
+          images are not shown in FloorGen 3D.
+        </p>
+      </fieldset>
 
       <fieldset>
         <legend>Size</legend>

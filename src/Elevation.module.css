@@ -8,6 +8,9 @@
 .dim line { stroke: var(--dim-line); stroke-width: 1; vector-effect: non-scaling-stroke; }
 .dim text { fill: var(--text-muted); font-size: var(--font); }
 
+.artBack { fill: var(--art-fill); }
+/* With an image the frame rect is only the interactive outline; it must still receive pointer events. */
+.art.withImage { fill: transparent; }
 .art { fill: var(--art-fill); stroke: var(--art-edge); stroke-width: 1; vector-effect: non-scaling-stroke; cursor: grab; outline: none; }
 .art:hover { stroke: var(--accent); stroke-width: 2; }
 .art:active { cursor: grabbing; }

@@ -7,6 +7,11 @@ interface Props {
   wall: WallView
   /** Null while the saved artwork is not on this wall: only the wall is drawn. */
   artwork: Artwork | null
+  /** Object URL of the local artwork image, drawn fitted inside the frame (never cropped or stretched). */
+  image?: string | null
+  /** Resize handles keep the frame's current width ÷ height. */
+  lockRatio?: boolean
+  onImageError?: () => void
   onChange: (a: Artwork) => void
 }
 
@@ -29,7 +34,7 @@ const LABEL_CHAR_PX = 6.9 // tabular digits at FONT_PX; the pill adds padding so
  * Wall elevation. The viewBox is exactly the wall in cm (x = u from endpoint A, y flipped so 0 = floor), so geometry
  * never depends on screen size; the browser's meet-scaling keeps proportions and getScreenCTM maps pointers back.
  */
-export function Elevation({ wall, artwork, onChange }: Props) {
+export function Elevation({ wall, artwork, image = null, lockRatio = false, onImageError, onChange }: Props) {
   const a = artwork ?? PLACEHOLDER // never drawn when null; keeps the hooks and handlers below unconditional
   const svg = useRef<SVGSVGElement>(null)
   const grab = useRef<{ dx: number; dy: number } | null>(null)
@@ -80,7 +85,7 @@ export function Elevation({ wall, artwork, onChange }: Props) {
     const r = resizing.current
     if (!r) return
     const p = toWall(e)
-    onChange(resizeFromHandle(wall, a, r.handle, { u: p.x - r.du, v: p.y - r.dv }))
+    onChange(resizeFromHandle(wall, a, r.handle, { u: p.x - r.du, v: p.y - r.dv }, lockRatio))
   }
   const endResize = () => {
     resizing.current = null
@@ -137,9 +142,26 @@ export function Elevation({ wall, artwork, onChange }: Props) {
         <text x={-dimGap - px(6)} y={H / 2} textAnchor="middle" transform={`rotate(-90 ${-dimGap - px(6)} ${H / 2})`}>{round1(H)} cm</text>
       </g>
 
+      {artwork && image && (
+        <>
+          {/* The frame's own colour shows behind a fitted image if the frame and image proportions differ. */}
+          <rect className={styles.artBack} x={a.u - a.width / 2} y={top} width={a.width} height={a.height} pointerEvents="none" />
+          <image
+            href={image}
+            data-testid="artwork-image"
+            x={a.u - a.width / 2}
+            y={top}
+            width={a.width}
+            height={a.height}
+            preserveAspectRatio="xMidYMid meet"
+            pointerEvents="none"
+            onError={onImageError}
+          />
+        </>
+      )}
       {artwork && (
       <rect
-        className={`${styles.art} ${selected ? styles.selected : ''}`}
+        className={`${styles.art} ${image ? styles.withImage : ''} ${selected ? styles.selected : ''}`}
         data-testid="artwork"
         tabIndex={0}
         role="slider"

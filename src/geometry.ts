@@ -124,7 +124,14 @@ export type Handle = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw'
  * Resize by dragging `handle` to wall-space point (u, v). The opposite edge(s) stay anchored, the moving
  * edge is clamped to the wall and the size limits, and it can never cross the anchor.
  */
-export function resizeFromHandle(wall: WallDims, art: Artwork, handle: Handle, to: { u: number; v: number }): Artwork {
+export function resizeFromHandle(
+  wall: WallDims,
+  art: Artwork,
+  handle: Handle,
+  to: { u: number; v: number },
+  keepRatio = false,
+): Artwork {
+  if (keepRatio) return resizeKeepingRatio(wall, art, handle, to)
   const e = extent(art)
   const maxH = Math.min(MAX_ART_HEIGHT, wall.height)
   let { u0, u1, v0, v1 } = e
@@ -221,4 +228,39 @@ export function offWallReasons(f: WallFrame, thickness: number, it: PlacedItem):
   if (turn > ATTACH_TOL_DEG) reasons.push(`It is turned ${round1(turn)}° away from facing into the room.`)
   if (c.u < 0 || c.u > f.length) reasons.push('Its centre is beyond the ends of this wall.')
   return reasons
+}
+
+/**
+ * Proportional resize: the artwork's current width ÷ height is preserved exactly. A corner handle keeps the opposite
+ * corner fixed; an edge handle keeps the opposite edge fixed and grows the other axis symmetrically about the centre.
+ * The scale is clamped so the result stays inside the wall, within the 200 cm height limit and above the minimum size.
+ */
+function resizeKeepingRatio(wall: WallDims, art: Artwork, handle: Handle, to: { u: number; v: number }): Artwork {
+  const e = extent(art)
+  const east = handle.includes('e')
+  const west = handle.includes('w')
+  const north = handle.includes('n')
+  const south = handle.includes('s')
+  const centreU = art.u
+  const centreV = art.v + art.height / 2
+
+  const wantW = east ? to.u - e.u0 : west ? e.u1 - to.u : NaN
+  const wantH = north ? to.v - e.v0 : south ? e.v1 - to.v : NaN
+  const requested = Math.max(wantW / art.width || 0, wantH / art.height || 0)
+
+  const lo = Math.max(MIN_SIZE / art.width, MIN_SIZE / art.height)
+  let hi = Math.min(wall.length / art.width, Math.min(MAX_ART_HEIGHT, wall.height) / art.height)
+  if (east) hi = Math.min(hi, (wall.length - e.u0) / art.width)
+  if (west) hi = Math.min(hi, e.u1 / art.width)
+  if (north) hi = Math.min(hi, (wall.height - e.v0) / art.height)
+  if (south) hi = Math.min(hi, e.v1 / art.height)
+  if (!east && !west) hi = Math.min(hi, (2 * Math.min(centreU, wall.length - centreU)) / art.width)
+  if (!north && !south) hi = Math.min(hi, (2 * Math.min(centreV, wall.height - centreV)) / art.height)
+  const scale = clamp(requested, lo, Math.max(lo, hi))
+
+  const width = art.width * scale
+  const height = art.height * scale
+  const u0 = east ? e.u0 : west ? e.u1 - width : centreU - width / 2
+  const v0 = north ? e.v0 : south ? e.v1 - height : centreV - height / 2
+  return { width, height, u: u0 + width / 2, v: v0 }
 }

@@ -34,6 +34,16 @@ A full-height workspace: a dark navy top bar (floor and wall pickers, save statu
 
 Save status is always one of: not saved yet, unsaved changes, saving, saved · verified (only after read-back verification and until the next edit), loaded from FloorGen, revision conflict, partially saved, save failed, or fix validation errors. A multi-step write that stops part-way says exactly what FloorGen holds.
 
+## Artwork images
+
+Choose a JPEG, PNG or WebP (up to 15 MB, 12,000 px per side) in the inspector's **Artwork image** section to see a real picture on the wall instead of a plain rectangle. **The image is stored only in this browser (IndexedDB); FloorGen receives the artwork's geometry (size and position) and nothing else, and custom images are not shown in FloorGen 3D.**
+
+- **Validation:** the file's real content is checked (not its name or declared type), so renamed text files, GIF and SVG are refused; it must also decode, and size limits apply. A refused file never changes the current image or the frame.
+- **Size from aspect ratio, not pixels:** a first image gets a 60 cm wide frame at the image's aspect ratio (shrunk proportionally to the 200 cm limit or the wall). An artwork that already exists in FloorGen, or has been edited, keeps its current width and takes its height from the new image. This is an ordinary unsaved edit.
+- **Proportions:** with an image, resizing keeps the frame's current ratio by default (corner handles keep the opposite corner fixed; edge handles grow the other axis about the centre; typed width/height follow each other). Untick **Lock proportions** to resize freely: the image is then shown whole inside the frame (never cropped or stretched) and **Match image proportions** restores the ratio.
+- **Persistence:** keyed by FloorGen project id and the artwork's persistent item id (`<project>/item/<id>`). Before the artwork has an id, the image is a local draft for that wall (`<project>/draft/<floor>/<wall>`) and is re-keyed when Apply first saves. Missing, damaged or blocked storage degrades to "no image" with a clear message and never blocks editing or Apply.
+- **FloorGen:** no documented custom image or texture field exists for items. `update_items.appearance` only takes per-part colours and named materials, the catalogue picture has a single colour slot, and textures exist only as presets for floors, rooms and walls. So WallSnap keeps using `place_on_wall` and `update_items` for geometry only, and Apply and read-back verification are independent of the image.
+
 ## Reload from FloorGen
 
 If the artwork is moved or resized directly in FloorGen, **Reload from FloorGen** (in the inspector) re-reads it by its persistent FloorGen item id and refreshes the SVG, the numeric inputs and the known project revision together. It is manual (no polling or subscriptions) and read-only: it never creates, resizes or moves anything.
@@ -65,6 +75,8 @@ Re-reads the project; rejects with 409 if its `rev` differs from the loaded one 
 Height <= 200 cm; inside wall bounds; no overlap with doors or windows; ground-floor walls >= 650 cm are treated as the reserved studio wall and disabled.
 
 ## Known limitations
+
+- Images live in one browser profile: they are not shared between browsers or devices, are lost if site data is cleared, and a draft image for a wall that is never saved stays in that browser's storage.
 
 - Reload and Apply act on the artwork id known in this session (from loading the wall, or from Apply). If an artwork was moved off its wall *before* the wall was opened in WallSnap, WallSnap cannot tell which wall it belonged to, so that wall opens as having no artwork.
 - An artwork that still hangs on the wall but has an out-of-range size or elevation (for example taller than 200 cm) is shown with its real numbers and the usual validation errors, not treated as detached.

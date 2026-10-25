@@ -145,3 +145,30 @@ describe('Reload over HTTP', () => {
     expect([ok.artworkId, ok.created]).toEqual([s.artworkId, false])
   })
 })
+
+describe('artwork images stay out of the server and FloorGen', () => {
+  it('has no image or upload route, and PUT /api/artwork rejects extra image data without writing it', async () => {
+    const mock = new MockGateway()
+    const calls: { tool: string; args: Record<string, unknown> }[] = []
+    const gw: Gateway = { kind: 'mock', call: (tool, args) => (calls.push({ tool, args }), mock.call(tool, args)) }
+    const base = await serve(gw)
+    for (const path of ['/api/image', '/api/upload', '/api/images/x']) {
+      for (const method of ['GET', 'POST', 'PUT']) {
+        expect((await fetch(`${base}${path}`, { method })).status, `${method} ${path}`).toBe(404)
+      }
+    }
+    const wall = await (await fetch(`${base}/api/wall?floor=f_first&wall=fl_east`)).json()
+    const res = await fetch(`${base}/api/artwork`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        floorId: 'f_first', wallId: 'fl_east', rev: wall.rev, itemId: null,
+        artwork: { width: 60, height: 40, u: 100, v: 100 },
+        image: 'data:image/png;base64,AAAA', texture: 'data:image/png;base64,BBBB',
+      }),
+    })
+    expect(res.status).toBe(200)
+    // Whatever the client sends, FloorGen only ever receives the documented geometry fields.
+    const sent = JSON.stringify(calls.filter((c) => ['place_on_wall', 'update_items'].includes(c.tool)))
+    expect(sent).not.toMatch(/data:image|base64|texture|image/i)
+  })
+})
