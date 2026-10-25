@@ -9,7 +9,7 @@ Flow: **load wall from FloorGen → edit locally (drag, arrows, numbers) → App
 ```bash
 npm install
 cp .env.example .env     # then fill in FLOORGEN_API_KEY
-npm run dev              # API on :8787, web on http://localhost:5173
+npm run dev              # API on :8787 (WALLSNAP_API_PORT), web on http://localhost:5173
 ```
 
 ### Credentials

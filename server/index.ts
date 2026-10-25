@@ -64,7 +64,7 @@ export function createApp(gw: Gateway, project: string) {
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   const { gw, project } = createGateway()
-  const port = Number(process.env.PORT ?? 8787)
+  const port = Number(process.env.WALLSNAP_API_PORT ?? 8787)
   createApp(gw, project).listen(port, () => {
     console.log(`WallSnap API on :${port} — adapter: ${gw.kind}${gw.kind === 'mock' ? ' (MOCK DATA, not FloorGen)' : ` project ${project}`}`)
   })
