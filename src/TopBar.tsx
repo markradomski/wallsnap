@@ -88,13 +88,13 @@ export function TopBar({ floors, floorId, wallId, onFloor, onWall, save, theme, 
       </div>
 
       <div className={styles.pickers}>
-        <label>
+        <label className={styles.floorPick}>
           <span>Floor</span>
           <select value={floorId} title={floor?.name} onChange={(e) => onFloor(e.target.value)}>
             {floors.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
           </select>
         </label>
-        <label>
+        <label className={styles.wallPick}>
           <span>Wall</span>
           <select value={wallId} title={wall?.label} onChange={(e) => onWall(e.target.value)}>
             <option value="" disabled>Select a wall…</option>
