@@ -1,0 +1,61 @@
+# WallSnap
+
+Precise placement of one wall-mounted artwork in a FloorGen project. React + TypeScript + Vite, SVG elevation editor, small Node adapter that talks to the FloorGen MCP server.
+
+Flow: **load wall from FloorGen → edit locally (drag, arrows, numbers) → Apply → read back and verify.**
+
+## Setup
+
+```bash
+npm install
+cp .env.example .env     # then fill in FLOORGEN_API_KEY
+npm run dev              # API on :8787, web on http://localhost:5173
+```
+
+### Credentials
+
+1. In FloorGen, open **Agents & MCP** and create an API key (`fg_live_…`) with *Read & edit* access to the development copy.
+2. Put it in `.env` as `FLOORGEN_API_KEY`. `.env` is git-ignored; the key stays on the server and is never sent to the browser.
+3. `FLOORGEN_PROJECT_ID` must be the development copy `p_1ii0qmfr58hv4` (see Safety rules); the server refuses to start with anything else.
+
+No key yet? `WALLSNAP_ADAPTER=mock npm run dev` runs against in-memory synthetic geometry. The UI shows a yellow **MOCK ADAPTER** banner. This is not a FloorGen integration.
+
+## Tests
+
+```bash
+npm test        # Vitest: geometry, adapter, safety guard, MCP boundary (mock gateway only)
+npm run e2e     # Playwright: drag, numeric edit, validation, Apply (mock adapter)
+npm run typecheck
+```
+
+## Coordinates
+
+- `u`: distance from wall **endpoint A** to the artwork centre, in cm. Endpoint A is authoritative whatever direction the wall is stored in or which face you view; the SVG always draws A on the left and labels A and B.
+- `v`: the artwork's bottom edge above the floor, in cm. The artwork occupies `[u - w/2, u + w/2] x [v, v + h]`.
+- FloorGen item `x,y` is the item centre, `elevation` is its underside height and `rotation` is degrees clockwise. The adapter converts `u` to a plan point along A→B, pushes it out by `wall thickness/2 + item depth/2` towards the room so the picture sits flush, and sets the rotation to face the room.
+- A catalogue `picture-large` is placed once, resized with `update_items`, tagged `wallsnap`, and reused on later Applies.
+
+## Apply
+
+Re-reads the project; rejects with 409 if its `rev` differs from the loaded one (the UI offers *Reload*); validates; writes with `expected_rev`; reads back; reports success only if width/height/`u`/`v` match within 0.1 cm and the item is flush within 0.5 cm. No writes happen while dragging.
+
+## Safety rules
+
+- Only `p_1ii0qmfr58hv4` (WallSnap DEV) is writable. `server/safety.ts` checks the project ID on **every** write tool call, before the MCP transport is reached, and refuses any other ID, including the original `p_128q3xq17slpfi`. Tools other than `list_floors`, `list_entities`, `describe_project`, `get_entity`, `search_catalog`, `place_item`, `place_on_wall` and `update_items` are refused outright (no duplicate/delete).
+- The server also refuses to start if `FLOORGEN_PROJECT_ID` is anything other than the dev copy.
+- Data returned by MCP is validated at the boundary (`server/boundary.ts`) before use.
+
+## Rules enforced
+
+Height <= 200 cm; inside wall bounds; no overlap with doors or windows; ground-floor walls >= 650 cm are treated as the reserved studio wall and disabled.
+
+## Known limitations
+
+- **The live FloorGen adapter has not yet been run with a real authenticated connection.** Unit and e2e tests use the mock gateway and synthetic geometry. Nothing here has been verified in FloorGen's 3D view.
+- `place_on_wall` is not used; the adapter uses `place_item` + `update_items`, whose schemas were verified, because `place_on_wall` was not exposed to the session where the integration was inspected.
+- The reserved-wall rule is a length heuristic. Lighting obstructions are not checked. One artwork per wall; walls bounding no room are not offered; for walls shared by two rooms the first room's face is used.
+- Whether the item's width/height are the visible picture face (versus including its frame) is unconfirmed.
+
+## Layout
+
+`src/geometry.ts` pure geometry (tested) · `src/Elevation.tsx` SVG editor · `src/App.tsx` screen · `server/adapter.ts` placement logic · `server/safety.ts` write guard · `server/boundary.ts` MCP validation · `server/gateway.ts` MCP client · `server/mock.ts` + `fixture.ts` mock with synthetic geometry.

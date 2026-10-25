@@ -1,0 +1,3 @@
+:root { color-scheme: light; font-family: system-ui, sans-serif; color: #1d2430; }
+body { margin: 0; background: #f4f5f7; }
+*, *::before, *::after { box-sizing: border-box; }

@@ -1,0 +1,8 @@
+.svg { width: 100%; max-height: 60vh; background: #fff; border: 1px solid #d5d9e0; border-radius: 6px; touch-action: none; }
+.wall { fill: #f5f2e9; stroke: #8a8577; stroke-width: 1; vector-effect: non-scaling-stroke; }
+.opening { fill: #cfe3f1; stroke: #6a8da6; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; }
+.floor { stroke: #1d2430; stroke-width: 2; vector-effect: non-scaling-stroke; }
+.art { fill: #4b5a70; stroke: #1d2430; stroke-width: 1; vector-effect: non-scaling-stroke; cursor: grab; outline: none; }
+.art:active { cursor: grabbing; }
+.art:focus-visible, .art:focus { stroke: #e8590c; stroke-width: 3; fill: #55688a; }
+.end { font-size: 11px; fill: #1d2430; }
