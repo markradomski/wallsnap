@@ -40,18 +40,31 @@ function Field({ f, text, valid, onType }: { f: { key: FieldKey; label: string }
 
 /** Right-hand properties inspector: size, position, save status, actions. */
 export function Inspector(p: Props) {
-  const isAlert = ['conflict', 'partial', 'error', 'invalid'].includes(p.save)
+  const prominent = ['conflict', 'partial', 'error', 'invalid'].includes(p.save)
   return (
     <form className={styles.inspector} onSubmit={(e) => { e.preventDefault(); p.onApply() }}>
-      <div className={`${styles.card} ${styles[p.save]}`} role={isAlert ? 'alert' : 'status'} data-testid="status-card">
-        <strong><span aria-hidden="true">{SAVE_GLYPH[p.save]}</span> {SAVE_LABEL[p.save]}</strong>
-        {p.save === 'invalid' ? (
-          <ul>{p.problems.map((m) => <li key={m}>{m}</li>)}</ul>
-        ) : (
+      {prominent ? (
+        // Failures stay prominent and actionable.
+        <div className={[styles.card, styles[p.save]].filter(Boolean).join(' ')} role="alert" data-testid="status-card">
+          <strong><span aria-hidden="true">{SAVE_GLYPH[p.save]}</span> {SAVE_LABEL[p.save]}</strong>
+          {p.save === 'invalid' ? (
+            <ul>{p.problems.map((m) => <li key={m}>{m}</li>)}</ul>
+          ) : (
+            <p data-testid="message">{p.detail}</p>
+          )}
+          {p.onReload && <button type="button" className={styles.reload} onClick={p.onReload}>Reload from FloorGen</button>}
+        </div>
+      ) : p.save === 'verified' ? (
+        // The header already says "Saved · verified"; here is only a brief confirmation with the read-back on demand.
+        <details className={styles.confirm} data-testid="status-note">
+          <summary><span aria-hidden="true">✓</span> Read back from FloorGen</summary>
           <p data-testid="message">{p.detail}</p>
-        )}
-        {p.onReload && <button type="button" className={styles.reload} onClick={p.onReload}>Reload from FloorGen</button>}
-      </div>
+        </details>
+      ) : (
+        <p className={[styles.note, styles[p.save]].filter(Boolean).join(' ')} role="status" data-testid="status-note">
+          <span aria-hidden="true">{SAVE_GLYPH[p.save]}</span> <span data-testid="message">{p.detail}</span>
+        </p>
+      )}
 
       <fieldset>
         <legend>Size</legend>

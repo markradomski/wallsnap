@@ -214,3 +214,74 @@ describe('resizeFromHandle', () => {
     expect(planPoint(rev, extent(grown).u0, 0)).toEqual(planPoint(rev, extent(a).u0, 0)) // anchored
   })
 })
+
+import { dimensionLabelPlacement } from './geometry'
+
+describe('dimensionLabelPlacement', () => {
+  const wall = { length: 600, height: 250 }
+  const label = { w: 80, h: 20 }
+  const scale = 1 // 1 px per cm keeps the arithmetic obvious
+  const clearance = 17
+  const place = (a: Artwork, s = scale) => dimensionLabelPlacement(wall, a, s, label, clearance)
+
+  it('sits above a mid-wall artwork, outside it and clear of the handle hit areas', () => {
+    const a = { width: 100, height: 60, u: 300, v: 100 }
+    const p = place(a)
+    expect(p.placement).toBe('above')
+    // label bottom edge = centre - h/2 must be above the top edge by at least the clearance
+    expect(p.v - label.h / 2 - (a.v + a.height)).toBeGreaterThanOrEqual(clearance)
+    expect(p.u).toBe(300)
+  })
+
+  it('moves below when the artwork is hard against the ceiling', () => {
+    const a = { width: 100, height: 60, u: 300, v: 190 } // top at 250
+    const p = place(a)
+    expect(p.placement).toBe('below')
+    expect(a.v - (p.v + label.h / 2)).toBeGreaterThanOrEqual(clearance)
+  })
+
+  it('stays above when the artwork is on the floor', () => {
+    expect(place({ width: 100, height: 60, u: 300, v: 0 }).placement).toBe('above')
+  })
+
+  it('falls inside only when there is no room above or below', () => {
+    const tall = { width: 100, height: 200, u: 300, v: 25 } // 25 cm above and below < 39 px needed
+    const p = place(tall)
+    expect(p.placement).toBe('inside')
+    expect(p.v).toBe(125)
+  })
+
+  it('stays inside the wall horizontally at both ends', () => {
+    const left = place({ width: 20, height: 40, u: 10, v: 100 })
+    const right = place({ width: 20, height: 40, u: 590, v: 100 })
+    expect(left.u).toBe(40) // label half width
+    expect(right.u).toBe(560)
+  })
+
+  it('works for very small artwork and for all four boundaries at once', () => {
+    for (const a of [
+      { width: 1, height: 1, u: 0.5, v: 0 }, { width: 1, height: 1, u: 599.5, v: 249 },
+      { width: 1, height: 1, u: 0.5, v: 249 }, { width: 1, height: 1, u: 599.5, v: 0 },
+    ]) {
+      const p = place(a)
+      expect(p.u - 40).toBeGreaterThanOrEqual(0)
+      expect(p.u + 40).toBeLessThanOrEqual(600)
+      expect(p.v - 10).toBeGreaterThanOrEqual(0)
+      expect(p.v + 10).toBeLessThanOrEqual(250)
+      expect(p.placement).not.toBe('inside')
+    }
+  })
+
+  it('is independent of screen scale: the same px clearance means fewer cm when zoomed in', () => {
+    const a = { width: 100, height: 60, u: 300, v: 100 }
+    const gapCm = (s: number) => place(a, s).v - label.h / 2 / s - (a.v + a.height)
+    expect(gapCm(1)).toBeCloseTo(17, 6)
+    expect(gapCm(2)).toBeCloseTo(8.5, 6)
+    expect(gapCm(0.5)).toBeCloseTo(34, 6)
+  })
+
+  it('centres on a wall narrower than the label', () => {
+    const p = dimensionLabelPlacement({ length: 50, height: 250 }, { width: 20, height: 40, u: 10, v: 100 }, 1, label, clearance)
+    expect(p.u).toBe(25)
+  })
+})

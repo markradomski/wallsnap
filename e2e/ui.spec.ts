@@ -171,19 +171,22 @@ test.describe('workspace layout', () => {
   })
 })
 
-test('a live size readout appears only while resizing and matches the inputs', async ({ page }) => {
+test('the dimension label stays with the selected artwork and follows resizing', async ({ page }) => {
   await page.goto('/')
   await pickWall(page, 'north wall, 600 cm')
-  await expect(page.getByTestId('size-readout')).toHaveCount(0)
+  const label = page.getByTestId('dimension-label')
+  const fromInputs = async () => `${await page.getByLabel('Width').inputValue()} × ${await page.getByLabel('Height').inputValue()} cm`
+  await expect(label).toHaveText(await fromInputs())
   const box = (await page.getByTestId('hit-se').boundingBox())!
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
   await page.mouse.down()
   await page.mouse.move(box.x + box.width / 2 + 40, box.y + box.height / 2 + 15, { steps: 4 })
-  const w = await page.getByLabel('Width').inputValue()
-  const h = await page.getByLabel('Height').inputValue()
-  await expect(page.getByTestId('size-readout')).toHaveText(`${w} × ${h} cm`)
+  await expect(label).toHaveText(await fromInputs())
   await page.mouse.up()
-  await expect(page.getByTestId('size-readout')).toHaveCount(0)
+  await expect(label).toBeVisible() // persistent context, not a transient readout
+  // Deselecting (clicking bare wall) hides handles and label together.
+  await page.locator('[data-testid=elevation] > rect').first().click({ position: { x: 5, y: 5 } })
+  await expect(label).toHaveCount(0)
 })
 
 test('numeric controls are keyboard reachable in order and the nudge hint is shown', async ({ page }) => {

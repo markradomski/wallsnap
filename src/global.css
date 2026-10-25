@@ -43,14 +43,15 @@
   /* The artwork's own colour is data (FloorGen's placeholder picture), so it is the same in every theme. */
   --art-fill: #4b5a70;
   --art-edge: #ffffff;
+  --label-bg: #ffffff;
   --disabled-bg: #e3e6ec;
   --disabled-text: #7b8497;
 }
 
 :root[data-theme='dark'] {
   color-scheme: dark;
-  --bg: #12161f;
-  --surface: #1b2130;
+  --bg: #0d1118;
+  --surface: #171d2a;
   --surface-2: #232a3b;
   --border: #323b50;
   --border-strong: #5b6680;
@@ -72,13 +73,15 @@
   --danger: #ff8a80;
   --danger-soft: rgba(255, 138, 128, 0.15);
 
-  --wall-face: #2a3243;
-  --wall-edge: #6c7690;
+  /* Workspace < wall < artwork in lightness, with a bright wall edge and artwork edge, kept low-saturation. */
+  --wall-face: #2c303d;
+  --wall-edge: #8a93ab;
   --opening-fill: rgba(110, 175, 225, 0.22);
   --opening-edge: #6ea6cf;
   --floor-line: #c9d1e3;
   --dim-line: #8791a8;
   --art-edge: #e6e9f2;
+  --label-bg: #171d2a;
   --disabled-bg: #2a3142;
   --disabled-text: #7d879c;
 }

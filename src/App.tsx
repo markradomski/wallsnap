@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import styles from './App.module.css'
 import { ApiError, getFloors, getStatus, getWall, putArtwork } from './api'
 import { Elevation } from './Elevation'
@@ -13,6 +13,8 @@ const DEFAULT_ART: Artwork = { width: 60, height: 45, u: 0, v: 120 }
 const KEYS: FieldKey[] = ['width', 'height', 'u', 'v']
 
 type Result = { kind: 'ok' | 'error'; text: string }
+
+const format = (a: Artwork): Record<string, string> => Object.fromEntries(KEYS.map((k) => [k, String(round1(a[k]))]))
 
 const describe = (a: Artwork) =>
   `${round1(a.width)}×${round1(a.height)} cm, horizontal position ${round1(a.u)} cm, bottom elevation ${round1(a.v)} cm`
@@ -33,7 +35,6 @@ export function App() {
   const [conflict, setConflict] = useState<string | null>(null)
   const [partial, setPartial] = useState<string | null>(null)
   const [verified, setVerified] = useState(false)
-  const typing = useRef(false)
 
   const fail = (e: unknown) => {
     const text = e instanceof Error ? e.message : 'Unexpected error'
@@ -68,8 +69,10 @@ export function App() {
     clearOutcome()
     getWall(fId, wId)
       .then((s) => {
+        const initial = s.artwork ?? clampToWall(s.wall, { ...DEFAULT_ART, u: s.wall.length / 2 })
         setState(s)
-        setArt(s.artwork ?? clampToWall(s.wall, { ...DEFAULT_ART, u: s.wall.length / 2 }))
+        setArt(initial)
+        setText(format(initial)) // same update as the artwork, so the inputs are never empty or stale
       })
       .catch((e) => {
         setState(null)
@@ -79,25 +82,17 @@ export function App() {
       .finally(() => setLoading(false))
   }
 
-  // Keep the numeric inputs in sync with the model (drag, resize, nudge, load).
-  useEffect(() => {
-    if (typing.current) typing.current = false
-    else if (art) setText(Object.fromEntries(KEYS.map((k) => [k, String(round1(art[k]))])))
-  }, [art])
-
   /** Any edit makes the displayed state unsaved: an earlier success or save error no longer describes it. */
-  const edit = (a: Artwork) => {
+  const edit = (a: Artwork, syncText = true) => {
     setArt(a)
+    if (syncText) setText(format(a)) // drag, resize and nudge write the inputs in the same update
     setResult(null)
     setVerified(false)
   }
   const typed = (key: FieldKey, value: string) => {
     setText((t) => ({ ...t, [key]: value }))
     const n = Number(value)
-    if (value.trim() !== '' && Number.isFinite(n) && art) {
-      typing.current = true
-      edit({ ...art, [key]: n })
-    }
+    if (value.trim() !== '' && Number.isFinite(n) && art) edit({ ...art, [key]: n }, false) // keep what is being typed
   }
   const parsed = useMemo(
     () => Object.fromEntries(KEYS.map((k) => [k, text[k] === undefined || text[k].trim() === '' ? NaN : Number(text[k])])) as unknown as Artwork,
@@ -113,8 +108,9 @@ export function App() {
       .then((r) => {
         setState({ ...state, rev: r.rev, artwork: r.artwork })
         setArt(r.artwork)
+        setText(format(r.artwork))
         setVerified(true)
-        setResult({ kind: 'ok', text: `Verified in FloorGen: ${r.created ? 'created' : 'updated'} artwork ${describe(r.artwork)}.` })
+        setResult({ kind: 'ok', text: `Verified in FloorGen: ${r.created ? 'created' : 'updated'} artwork ${describe(r.artwork)}. Re-read from FloorGen after saving (revision ${r.rev}).` })
       })
       .catch(fail)
       .finally(() => setSaving(false))
@@ -142,6 +138,8 @@ export function App() {
       invalid: '',
     } as const)[save]
 
+  const wallLabel = floors.find((f) => f.id === floorId)?.walls.find((w) => w.id === wallId)?.label ?? ''
+
   const onFloor = (id: string) => {
     setFloorId(id)
     setWallId('')
@@ -164,11 +162,14 @@ export function App() {
           {state && art ? (
             <>
               <div className={styles.meta}>
+                {wallLabel && <span className={styles.wallName} title={wallLabel} data-testid="wall-name">{wallLabel}</span>}
                 <span data-testid="wall-dims">Wall: {round1(state.wall.length)} × {round1(state.wall.height)} cm</span>
                 <span>Endpoint A is at the left</span>
               </div>
               <div className={styles.stage}>
-                <Elevation wall={state.wall} artwork={art} onChange={edit} />
+                <div className={styles.canvas} style={{ ['--aspect' as string]: state.wall.length / state.wall.height }}>
+                  <Elevation wall={state.wall} artwork={art} onChange={edit} />
+                </div>
               </div>
             </>
           ) : (

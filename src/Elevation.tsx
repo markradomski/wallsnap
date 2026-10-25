@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react'
-import { clampToWall, handlePoint, nudge, resizeFromHandle, round1, type Handle } from './geometry'
+import { clampToWall, dimensionLabelPlacement, handlePoint, nudge, resizeFromHandle, round1, type Handle } from './geometry'
 import styles from './Elevation.module.css'
 import type { Artwork, WallView } from './types'
 
@@ -19,6 +19,8 @@ const HANDLE_PX = 8
 const HIT_PX = 26
 const MIN_HIT_PX = 12
 const FONT_PX = 12
+const LABEL_H_PX = 20
+const LABEL_CHAR_PX = 6.9 // tabular digits at FONT_PX; the pill adds padding so small estimate errors never clip
 
 /**
  * Wall elevation. The viewBox is exactly the wall in cm (x = u from endpoint A, y flipped so 0 = floor), so geometry
@@ -173,17 +175,17 @@ export function Elevation({ wall, artwork: a, onChange }: Props) {
           </g>
         )
       })}
-      {activeHandle && (
-        <text
-          className={styles.readout}
-          data-testid="size-readout"
-          x={a.u}
-          y={top > px(24) ? top - px(10) : top + a.height + px(18)}
-          textAnchor="middle"
-        >
-          {round1(a.width)} × {round1(a.height)} cm
-        </text>
-      )}
+      {selected && (() => {
+        const text = `${round1(a.width)} × ${round1(a.height)} cm`
+        const size = { w: text.length * LABEL_CHAR_PX + 16, h: LABEL_H_PX }
+        const p = dimensionLabelPlacement(wall, a, pxPerCm, size, hitPx / 2 + 4)
+        return (
+          <g className={styles.label} data-testid="dimension-label" data-placement={p.placement} pointerEvents="none">
+            <rect x={p.u - px(size.w) / 2} y={H - p.v - px(size.h) / 2} width={px(size.w)} height={px(size.h)} rx={px(4)} />
+            <text x={p.u} y={H - p.v} textAnchor="middle" dominantBaseline="central">{text}</text>
+          </g>
+        )
+      })()}
     </svg>
   )
 }

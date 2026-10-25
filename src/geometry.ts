@@ -143,3 +143,46 @@ export function handlePoint(art: Artwork, handle: Handle): { u: number; v: numbe
     v: handle.includes('n') ? e.v1 : handle.includes('s') ? e.v0 : art.v + art.height / 2,
   }
 }
+
+// ---- Contextual dimension label ----
+
+export interface LabelSize {
+  /** Label size in screen pixels. */
+  w: number
+  h: number
+}
+export type LabelPlacement = 'above' | 'below' | 'inside'
+
+/**
+ * Where to draw the "W × H cm" label for the selected artwork, in wall space. It prefers a spot outside the artwork,
+ * clear of the edge handles' hit areas (`clearancePx`), and stays inside the wall so it never meets the A/B or
+ * dimension annotations. Sizes arrive in pixels and are converted with `pxPerCm`, so it is independent of SVG scale.
+ */
+export function dimensionLabelPlacement(
+  wall: WallDims,
+  art: Artwork,
+  pxPerCm: number,
+  label: LabelSize,
+  clearancePx: number,
+): { u: number; v: number; placement: LabelPlacement } {
+  const e = extent(art)
+  const need = clearancePx + label.h + 2
+  const spaceAbove = (wall.height - e.v1) * pxPerCm
+  const spaceBelow = e.v0 * pxPerCm
+  const offset = (clearancePx + label.h / 2) / pxPerCm
+  let placement: LabelPlacement
+  let v: number
+  if (spaceAbove >= need) {
+    placement = 'above'
+    v = e.v1 + offset
+  } else if (spaceBelow >= need) {
+    placement = 'below'
+    v = e.v0 - offset
+  } else {
+    placement = 'inside'
+    v = (e.v0 + e.v1) / 2
+  }
+  const half = label.w / 2 / pxPerCm
+  const u = wall.length <= 2 * half ? wall.length / 2 : clamp(art.u, half, wall.length - half)
+  return { u, v, placement }
+}

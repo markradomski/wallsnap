@@ -10,9 +10,8 @@
 .pickers select:hover { border-color: #5b6f9b; }
 .pickers select:focus-visible, .theme button:focus-visible { outline-color: #c4b5fd; }
 
-.right { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-left: auto; }
 
-.status { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; font-size: 12px; font-weight: 600; border-radius: 999px; border: 1px solid transparent; white-space: nowrap; background: var(--chrome-surface); color: var(--chrome-text); }
+.status { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; font-size: 12px; font-weight: 600; border-radius: 999px; border: 1px solid transparent; white-space: nowrap; background: var(--chrome-surface); color: var(--chrome-text); }
 /* Pill colours are fixed light-on-navy values; the glyph and label carry the meaning too. */
 .verified, .synced { background: rgba(95, 214, 138, 0.16); color: #7ae8a0; border-color: rgba(95, 214, 138, 0.4); }
 .unsaved, .new { background: rgba(242, 193, 78, 0.16); color: #f6cf6e; border-color: rgba(242, 193, 78, 0.4); }
@@ -26,3 +25,28 @@
 .theme button + button { border-left: 1px solid var(--chrome-border); }
 .theme button:hover { background: var(--chrome-surface); color: var(--chrome-text); }
 .theme button[aria-pressed='true'] { background: #a78bfa; color: #170d33; font-weight: 650; }
+
+.statusText { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.settings { display: none; position: relative; }
+.gear { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 28px; color: var(--chrome-text); background: var(--chrome-surface); border: 1px solid var(--chrome-border); border-radius: 5px; cursor: pointer; }
+.gear:hover, .gear[aria-expanded='true'] { border-color: #a78bfa; }
+.gear:focus-visible, .panel button:focus-visible { outline-color: #c4b5fd; }
+.panel { position: absolute; right: 0; top: calc(100% + 6px); z-index: 10; display: flex; flex-direction: column; min-width: 140px; padding: 4px; background: var(--chrome-surface); border: 1px solid var(--chrome-border); border-radius: 6px; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35); }
+.panelTitle { padding: 4px 8px; font-size: 11px; font-weight: 650; letter-spacing: 0.06em; text-transform: uppercase; color: var(--chrome-muted); }
+.panel button { padding: 7px 8px; font-size: 13px; text-align: left; color: var(--chrome-text); background: transparent; border: 0; border-radius: 4px; cursor: pointer; }
+.panel button:hover { background: var(--chrome-border); }
+.panel button[aria-pressed='true'] { background: #a78bfa; color: #170d33; font-weight: 650; }
+
+@media (max-width: 900px) {
+  .bar { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: 'brand status settings' 'pickers pickers pickers'; align-items: center; gap: 5px 8px; padding: 6px 10px; }
+  .brand { grid-area: brand; }
+  .brand h1 { font-size: 14px; }
+  .status { grid-area: status; justify-self: end; min-width: 0; max-width: 100%; margin: 0; padding: 2px 8px; font-size: 11px; }
+  .theme { display: none; }
+  .settings { display: block; grid-area: settings; }
+  .pickers { grid-area: pickers; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 6px; }
+  .pickers label { display: block; min-width: 0; }
+  /* Field names stay available to assistive tech; the narrow bar saves the width for the values. */
+  .pickers label > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .pickers select { width: 100%; max-width: none; padding: 5px 6px; text-overflow: ellipsis; }
+}
