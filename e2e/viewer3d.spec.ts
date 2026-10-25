@@ -23,7 +23,7 @@ test('Open in FloorGen 3D is a keyboard-reachable link that opens a new tab and 
   await expect(link).toHaveAttribute('target', '_blank')
   await expect(link).toHaveAttribute('rel', /noopener/)
   await expect(link).toBeVisible()
-  // Sits beside Apply.
+  // Sits with Apply in the same action group.
   const apply = await page.getByRole('button', { name: 'Apply to FloorGen' }).boundingBox()
   const lb = (await link.boundingBox())!
   expect(Math.abs(lb.y - apply!.y)).toBeLessThan(60)
@@ -31,6 +31,8 @@ test('Open in FloorGen 3D is a keyboard-reachable link that opens a new tab and 
   // Make an unsaved edit, then reach the link with the keyboard only.
   await page.getByLabel('Horizontal position').fill('450')
   await page.getByRole('button', { name: 'Apply to FloorGen' }).focus()
+  await page.keyboard.press('Tab')
+  await expect(page.getByRole('button', { name: 'Reload from FloorGen' })).toBeFocused()
   await page.keyboard.press('Tab')
   await expect(link).toBeFocused()
 

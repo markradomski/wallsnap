@@ -186,3 +186,39 @@ export function dimensionLabelPlacement(
   const u = wall.length <= 2 * half ? wall.length / 2 : clamp(art.u, half, wall.length - half)
   return { u, v, placement }
 }
+
+// ---- Wall attachment (FloorGen has no permanent wall constraint, so it must be checked) ----
+
+/** An item as FloorGen stores it: centre x/y in the plan, rotation in degrees clockwise, sizes in cm. */
+export interface PlacedItem {
+  x: number
+  y: number
+  rotation: number
+  width: number
+  height: number
+  depth: number
+  elevation: number
+}
+
+/** How far from "flush on the wall face" (cm) and from "facing the room" (degrees) still counts as attached. */
+export const ATTACH_TOL_CM = 2
+export const ATTACH_TOL_DEG = 2
+
+const angleDiff = (a: number, b: number) => Math.abs((((a - b) % 360) + 540) % 360 - 180)
+
+/**
+ * Why an item is not hanging on this wall, or [] when it is. Checks the wall plane, the facing direction and that
+ * the item's centre lies along the wall. It never moves or "corrects" the item: callers must not invent coordinates.
+ */
+export function offWallReasons(f: WallFrame, thickness: number, it: PlacedItem): string[] {
+  const reasons: string[] = []
+  const c = wallCoords(f, it)
+  const off = c.perp - flushPerp(thickness, it.depth)
+  if (Math.abs(off) > ATTACH_TOL_CM) {
+    reasons.push(`It is ${round1(Math.abs(off))} cm ${off > 0 ? 'in front of' : 'behind'} the wall surface.`)
+  }
+  const turn = angleDiff(it.rotation, facingRotation(f.normal))
+  if (turn > ATTACH_TOL_DEG) reasons.push(`It is turned ${round1(turn)}° away from facing into the room.`)
+  if (c.u < 0 || c.u > f.length) reasons.push('Its centre is beyond the ends of this wall.')
+  return reasons
+}

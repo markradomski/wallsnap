@@ -5,9 +5,12 @@ import type { Artwork, WallView } from './types'
 
 interface Props {
   wall: WallView
-  artwork: Artwork
+  /** Null while the saved artwork is not on this wall: only the wall is drawn. */
+  artwork: Artwork | null
   onChange: (a: Artwork) => void
 }
+
+const PLACEHOLDER: Artwork = { width: 1, height: 1, u: 0, v: 0 }
 
 const HANDLES: Handle[] = ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'] // corners last so they win where hit areas overlap
 const CURSOR: Record<Handle, string> = {
@@ -26,7 +29,8 @@ const LABEL_CHAR_PX = 6.9 // tabular digits at FONT_PX; the pill adds padding so
  * Wall elevation. The viewBox is exactly the wall in cm (x = u from endpoint A, y flipped so 0 = floor), so geometry
  * never depends on screen size; the browser's meet-scaling keeps proportions and getScreenCTM maps pointers back.
  */
-export function Elevation({ wall, artwork: a, onChange }: Props) {
+export function Elevation({ wall, artwork, onChange }: Props) {
+  const a = artwork ?? PLACEHOLDER // never drawn when null; keeps the hooks and handlers below unconditional
   const svg = useRef<SVGSVGElement>(null)
   const grab = useRef<{ dx: number; dy: number } | null>(null)
   const resizing = useRef<{ handle: Handle; du: number; dv: number } | null>(null)
@@ -133,6 +137,7 @@ export function Elevation({ wall, artwork: a, onChange }: Props) {
         <text x={-dimGap - px(6)} y={H / 2} textAnchor="middle" transform={`rotate(-90 ${-dimGap - px(6)} ${H / 2})`}>{round1(H)} cm</text>
       </g>
 
+      {artwork && (
       <rect
         className={`${styles.art} ${selected ? styles.selected : ''}`}
         data-testid="artwork"
@@ -150,7 +155,8 @@ export function Elevation({ wall, artwork: a, onChange }: Props) {
         onKeyDown={key}
         onFocus={() => setSelected(true)}
       />
-      {selected && HANDLES.map((h) => {
+      )}
+      {artwork && selected && HANDLES.map((h) => {
         const at = handlePoint(a, h)
         const cx = at.u
         const cy = H - at.v
@@ -175,7 +181,7 @@ export function Elevation({ wall, artwork: a, onChange }: Props) {
           </g>
         )
       })}
-      {selected && (() => {
+      {artwork && selected && (() => {
         const text = `${round1(a.width)} × ${round1(a.height)} cm`
         const size = { w: text.length * LABEL_CHAR_PX + 16, h: LABEL_H_PX }
         const p = dimensionLabelPlacement(wall, a, pxPerCm, size, hitPx / 2 + 4)

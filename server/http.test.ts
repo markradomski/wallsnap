@@ -72,3 +72,76 @@ describe('/api/status 3D link', () => {
     expect((await status(new MockGateway(), 'mock-project')).viewer3dUrl).toBeNull()
   })
 })
+
+describe('Reload over HTTP', () => {
+  const put = (base: string, rev: number, art: object, itemId?: string) =>
+    fetch(`${base}/api/artwork`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ floorId: 'f_first', wallId: 'fl_east', rev, artwork: art, itemId }),
+    })
+
+  it('returns the saved artwork id, then reflects an external edit, with no writes', async () => {
+    const mock = new MockGateway()
+    const writes: string[] = []
+    const gw: Gateway = { kind: 'mock', call: (t, a) => (['place_on_wall', 'update_items'].includes(t) && writes.push(t), mock.call(t, a)) }
+    const base = await serve(gw)
+    const wall0 = await (await fetch(`${base}/api/wall?floor=f_first&wall=fl_east`)).json()
+    const saved = await (await put(base, wall0.rev, { width: 60, height: 40, u: 100, v: 100 })).json()
+    expect(saved.artworkId).toMatch(/^i_/)
+
+    mock.resizeItem(saved.artworkId, { width: 75 })
+    writes.length = 0
+    const res = await fetch(`${base}/api/wall?floor=f_first&wall=fl_east&item=${saved.artworkId}`)
+    const body = await res.json()
+    expect(res.status).toBe(200)
+    expect(body.artwork).toMatchObject({ width: 75, height: 40 })
+    expect(body.artworkId).toBe(saved.artworkId)
+    expect(body.rev).toBeGreaterThan(saved.rev)
+    expect(writes).toEqual([])
+  })
+
+  it('answers 404 with a specific code for a deleted artwork and for a missing wall', async () => {
+    const mock = new MockGateway()
+    const base = await serve(mock)
+    const wall0 = await (await fetch(`${base}/api/wall?floor=f_first&wall=fl_east`)).json()
+    const saved = await (await put(base, wall0.rev, { width: 60, height: 40, u: 100, v: 100 })).json()
+
+    mock.hideWall('fl_east')
+    const noWall = await fetch(`${base}/api/wall?floor=f_first&wall=fl_east&item=${saved.artworkId}`)
+    expect([noWall.status, (await noWall.json()).code]).toEqual([404, 'wall_missing'])
+
+    const mock2 = new MockGateway()
+    const base2 = await serve(mock2)
+    const w = await (await fetch(`${base2}/api/wall?floor=f_first&wall=fl_east`)).json()
+    const s2 = await (await put(base2, w.rev, { width: 60, height: 40, u: 100, v: 100 })).json()
+    mock2.deleteItem(s2.artworkId)
+    const gone = await fetch(`${base2}/api/wall?floor=f_first&wall=fl_east&item=${s2.artworkId}`)
+    const goneBody = await gone.json()
+    expect([gone.status, goneBody.code]).toEqual([404, 'artwork_missing'])
+    expect(goneBody.error).toMatch(/no longer exists/)
+  })
+
+  it('reports an artwork dragged off the wall without coordinates', async () => {
+    const mock = new MockGateway()
+    const base = await serve(mock)
+    const w = await (await fetch(`${base}/api/wall?floor=f_first&wall=fl_east`)).json()
+    const s = await (await put(base, w.rev, { width: 60, height: 40, u: 100, v: 100 })).json()
+    mock.moveItem(s.artworkId, { x: 250 })
+    const body = await (await fetch(`${base}/api/wall?floor=f_first&wall=fl_east&item=${s.artworkId}`)).json()
+    expect(body.artwork).toBeNull()
+    expect(body.detached.message).toBe('Artwork is no longer positioned on this wall.')
+  })
+
+  it('Apply with a stale revision is still refused, and with the reloaded one it updates the same object', async () => {
+    const mock = new MockGateway()
+    const base = await serve(mock)
+    const w = await (await fetch(`${base}/api/wall?floor=f_first&wall=fl_east`)).json()
+    const s = await (await put(base, w.rev, { width: 60, height: 40, u: 100, v: 100 })).json()
+    mock.touch()
+    const stale = await put(base, s.rev, { width: 60, height: 40, u: 120, v: 100 }, s.artworkId)
+    expect([stale.status, (await stale.json()).code]).toEqual([409, 'stale'])
+    const fresh = await (await fetch(`${base}/api/wall?floor=f_first&wall=fl_east&item=${s.artworkId}`)).json()
+    const ok = await (await put(base, fresh.rev, { width: 60, height: 40, u: 120, v: 100 }, s.artworkId)).json()
+    expect([ok.artworkId, ok.created]).toEqual([s.artworkId, false])
+  })
+})

@@ -1,7 +1,7 @@
 import type { Artwork } from './types'
 
 export type SaveState =
-  | 'none' | 'loading' | 'saving' | 'conflict' | 'partial' | 'error' | 'invalid' | 'new' | 'unsaved' | 'synced' | 'verified'
+  | 'none' | 'loading' | 'saving' | 'conflict' | 'partial' | 'error' | 'detached' | 'invalid' | 'new' | 'unsaved' | 'synced' | 'verified'
 
 export const SAVE_LABEL: Record<SaveState, string> = {
   none: 'No wall selected',
@@ -10,6 +10,7 @@ export const SAVE_LABEL: Record<SaveState, string> = {
   conflict: 'Revision conflict',
   partial: 'Partially saved',
   error: 'Save failed',
+  detached: 'Not on this wall',
   invalid: 'Fix validation errors',
   new: 'Not saved yet',
   unsaved: 'Unsaved changes',
@@ -19,7 +20,7 @@ export const SAVE_LABEL: Record<SaveState, string> = {
 
 /** A shape/glyph per state so nothing relies on colour alone. */
 export const SAVE_GLYPH: Record<SaveState, string> = {
-  none: '–', loading: '…', saving: '↻', conflict: '⚠', partial: '◐', error: '✕', invalid: '✕', new: '●', unsaved: '●', synced: '✓', verified: '✓',
+  none: '–', loading: '…', saving: '↻', conflict: '⚠', partial: '◐', error: '✕', detached: '⚠', invalid: '✕', new: '●', unsaved: '●', synced: '✓', verified: '✓',
 }
 
 export const sameArtwork = (a: Artwork, b: Artwork, tol = 0.05) =>
@@ -32,6 +33,10 @@ export interface SaveInputs {
   conflict: boolean
   partial: boolean
   error: boolean
+  /** The saved artwork exists but is no longer hanging on this wall, and nothing has been drafted to put it back. */
+  detached: boolean
+  /** A saved FloorGen artwork is known for this wall (so an unsaved draft is an edit of it, not a new artwork). */
+  hasItem: boolean
   problems: number
   /** What FloorGen last confirmed holding for this wall (null: no artwork saved yet). */
   baseline: Artwork | null
@@ -43,13 +48,14 @@ export interface SaveInputs {
 /** Success ("verified") is only ever shown after read-back verification and while nothing has been edited since. */
 export function deriveSaveState(i: SaveInputs): SaveState {
   if (i.loading) return 'loading'
+  if (i.hasWall && !i.current && i.detached) return 'detached'
   if (!i.hasWall || !i.current) return 'none'
   if (i.saving) return 'saving'
   if (i.conflict) return 'conflict'
   if (i.partial) return 'partial'
   if (i.error) return 'error'
   if (i.problems > 0) return 'invalid'
-  if (!i.baseline) return 'new'
+  if (!i.baseline) return i.hasItem ? 'unsaved' : 'new'
   if (!sameArtwork(i.baseline, i.current)) return 'unsaved'
   return i.verified ? 'verified' : 'synced'
 }

@@ -39,14 +39,28 @@ export interface Artwork {
   v: number
 }
 
+/** The saved artwork exists but is not hanging on this wall; its position is deliberately not converted. */
+export interface Detached {
+  message: string
+  reasons: string[]
+  /** Its own size and elevation, so it can be placed back on the wall. */
+  width: number
+  height: number
+  elevation: number
+}
+
 export interface WallState {
   wall: WallView
   artwork: Artwork | null
+  /** FloorGen's persistent id of the WallSnap artwork, once known. Reload and Apply act on this object. */
+  artworkId: string | null
+  detached: Detached | null
   rev: number
 }
 
 export interface ApplyResult {
   artwork: Artwork
+  artworkId: string
   rev: number
   created: boolean
 }

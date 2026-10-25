@@ -4,7 +4,7 @@ import { ApiError, getFloors, getStatus, getWall, putArtwork } from './api'
 import { Elevation } from './Elevation'
 import { clampToWall, round1, validate } from './geometry'
 import { Inspector, type FieldKey } from './Inspector'
-import { deriveSaveState } from './saveState'
+import { deriveSaveState, sameArtwork } from './saveState'
 import { useTheme } from './theme'
 import { TopBar } from './TopBar'
 import type { Artwork, FloorSummary, WallState } from './types'
@@ -28,19 +28,23 @@ export function App() {
   const [wallId, setWallId] = useState('')
   const [state, setState] = useState<WallState | null>(null)
   const [art, setArt] = useState<Artwork | null>(null)
+  /** What the editor held when it was last loaded or saved: the reference for "do I have unsaved edits?". */
+  const [base, setBase] = useState<Artwork | null>(null)
   const [text, setText] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
+  const [reloading, setReloading] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [confirmReload, setConfirmReload] = useState(false)
   const [result, setResult] = useState<Result | null>(null)
   const [conflict, setConflict] = useState<string | null>(null)
   const [partial, setPartial] = useState<string | null>(null)
   const [verified, setVerified] = useState(false)
 
-  const fail = (e: unknown) => {
+  const fail = (e: unknown, prefix = '') => {
     const text = e instanceof Error ? e.message : 'Unexpected error'
-    if (e instanceof ApiError && (e.status === 409 || e.code === 'stale')) setConflict(text)
-    else if (e instanceof ApiError && e.code === 'partial') setPartial(text)
-    else setResult({ kind: 'error', text })
+    if (!prefix && e instanceof ApiError && (e.status === 409 || e.code === 'stale')) setConflict(text)
+    else if (!prefix && e instanceof ApiError && e.code === 'partial') setPartial(text)
+    else setResult({ kind: 'error', text: prefix + text })
   }
 
   useEffect(() => {
@@ -52,7 +56,7 @@ export function App() {
         const first = f.find((x) => x.walls.some((w) => !w.reserved))
         if (first) setFloorId(first.id)
       })
-      .catch(fail)
+      .catch((e) => fail(e))
       .finally(() => setLoading(false))
   }, [])
 
@@ -61,6 +65,24 @@ export function App() {
     setConflict(null)
     setPartial(null)
     setVerified(false)
+    setConfirmReload(false)
+  }
+
+  /** Replace the whole editor with FloorGen's state: artwork, numeric inputs, reference copy and revision together. */
+  const show = (s: WallState) => {
+    clearOutcome()
+    setState(s)
+    if (s.detached) {
+      // Saved, but not on this wall: nothing is drawn and no position is invented.
+      setArt(null)
+      setBase(null)
+      setText({})
+      return
+    }
+    const initial = s.artwork ?? clampToWall(s.wall, { ...DEFAULT_ART, u: s.wall.length / 2 })
+    setArt(initial)
+    setBase(initial)
+    setText(format(initial)) // same update as the artwork, so the inputs are never empty or stale
   }
 
   const load = (fId: string, wId: string) => {
@@ -68,12 +90,7 @@ export function App() {
     setLoading(true)
     clearOutcome()
     getWall(fId, wId)
-      .then((s) => {
-        const initial = s.artwork ?? clampToWall(s.wall, { ...DEFAULT_ART, u: s.wall.length / 2 })
-        setState(s)
-        setArt(initial)
-        setText(format(initial)) // same update as the artwork, so the inputs are never empty or stale
-      })
+      .then(show)
       .catch((e) => {
         setState(null)
         setArt(null)
@@ -88,6 +105,7 @@ export function App() {
     if (syncText) setText(format(a)) // drag, resize and nudge write the inputs in the same update
     setResult(null)
     setVerified(false)
+    setConfirmReload(false)
   }
   const typed = (key: FieldKey, value: string) => {
     setText((t) => ({ ...t, [key]: value }))
@@ -99,25 +117,52 @@ export function App() {
     [text],
   )
   const problems = state && art ? validate(state.wall, parsed) : []
+  /** Local edits that Reload would throw away (also true for a draft that puts a detached artwork back). */
+  const dirty = !!art && (!base || !sameArtwork(parsed, base))
 
   const apply = () => {
-    if (!state || problems.length || saving || conflict || partial) return
+    if (!state || !art || problems.length || saving || reloading || conflict || partial) return
     setSaving(true)
     clearOutcome()
-    putArtwork(state.wall.floorId, state.wall.id, parsed, state.rev)
+    putArtwork(state.wall.floorId, state.wall.id, parsed, state.rev, state.artworkId)
       .then((r) => {
-        setState({ ...state, rev: r.rev, artwork: r.artwork })
+        setState({ ...state, rev: r.rev, artwork: r.artwork, artworkId: r.artworkId, detached: null })
         setArt(r.artwork)
+        setBase(r.artwork)
         setText(format(r.artwork))
         setVerified(true)
         setResult({ kind: 'ok', text: `Verified in FloorGen: ${r.created ? 'created' : 'updated'} artwork ${describe(r.artwork)}. Re-read from FloorGen after saving (revision ${r.rev}).` })
       })
-      .catch(fail)
+      .catch((e) => fail(e))
       .finally(() => setSaving(false))
+  }
+
+  /** Re-read the saved artwork by its FloorGen id. Read-only; on any failure the local state is left exactly as it was. */
+  const doReload = () => {
+    if (!state) return
+    setConfirmReload(false)
+    setReloading(true)
+    getWall(state.wall.floorId, state.wall.id, state.artworkId ?? undefined)
+      .then(show)
+      .catch((e) => fail(e, 'Could not reload from FloorGen: '))
+      .finally(() => setReloading(false))
+  }
+  const reload = () => {
+    if (!state || reloading || saving || loading) return
+    if (dirty) setConfirmReload(true) // never discard edits silently
+    else doReload()
+  }
+
+  /** Recovery for a detached artwork: draft it back onto this wall; Apply then moves the same FloorGen object. */
+  const placeBack = () => {
+    const d = state?.detached
+    if (!state || !d) return
+    edit(clampToWall(state.wall, { width: d.width, height: d.height, u: state.wall.length / 2, v: d.elevation }))
   }
 
   const save = deriveSaveState({
     hasWall: !!state, loading, saving, conflict: !!conflict, partial: !!partial, error: result?.kind === 'error',
+    detached: !!state?.detached, hasItem: !!state?.artworkId,
     problems: problems.length, baseline: state?.artwork ?? null, current: art, verified,
   })
 
@@ -130,15 +175,14 @@ export function App() {
       saving: 'Writing to FloorGen, then reading it back to verify…',
       new: 'This wall has no WallSnap artwork yet. Applying creates one.',
       unsaved: 'Your edits are local until you apply them.',
-      synced: 'This matches what FloorGen currently holds.',
+      synced: state ? `This matches what FloorGen held at revision ${state.rev}.` : '',
+      detached: state?.detached?.message ?? '',
       verified: '',
       conflict: '',
       partial: '',
       error: '',
       invalid: '',
     } as const)[save]
-
-  const wallLabel = floors.find((f) => f.id === floorId)?.walls.find((w) => w.id === wallId)?.label ?? ''
 
   const onFloor = (id: string) => {
     setFloorId(id)
@@ -151,6 +195,7 @@ export function App() {
     setWallId(id)
     load(floorId, id)
   }
+  const wallLabel = floors.find((f) => f.id === floorId)?.walls.find((w) => w.id === wallId)?.label ?? ''
 
   return (
     <div className={styles.app}>
@@ -159,7 +204,7 @@ export function App() {
 
       <div className={styles.workspace}>
         <main className={styles.editor}>
-          {state && art ? (
+          {state ? (
             <>
               <div className={styles.meta}>
                 {wallLabel && <span className={styles.wallName} title={wallLabel} data-testid="wall-name">{wallLabel}</span>}
@@ -177,17 +222,25 @@ export function App() {
           )}
         </main>
 
-        {state && art && (
+        {state && (
           <Inspector
             text={text}
-            valid={Object.fromEntries(KEYS.map((k) => [k, Number.isFinite(parsed[k])])) as Record<FieldKey, boolean>}
+            disabled={!art}
+            valid={Object.fromEntries(KEYS.map((k) => [k, !art || Number.isFinite(parsed[k])])) as Record<FieldKey, boolean>}
             onType={typed}
             problems={problems}
             save={save}
             detail={detail}
-            onReload={conflict || partial ? () => load(floorId, wallId) : null}
-            canApply={!problems.length && !saving && !loading && !conflict && !partial}
+            detached={state.detached}
+            onPlaceBack={placeBack}
+            canApply={!!art && !problems.length && !saving && !loading && !reloading && !conflict && !partial}
             onApply={apply}
+            reloading={reloading}
+            canReload={!loading && !saving && !reloading}
+            onReload={reload}
+            confirmReload={confirmReload}
+            onDiscardAndReload={doReload}
+            onKeepEditing={() => setConfirmReload(false)}
             viewerUrl={viewerUrl}
           />
         )}

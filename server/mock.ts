@@ -28,9 +28,33 @@ export class MockGateway implements Gateway {
   private items: MockItem[] = []
   private seq = 0
 
+  private hiddenWalls = new Set<string>()
+
   /** Test hook: simulates someone else editing the project. */
   touch() {
     this.rev++
+  }
+
+  /** Test hooks: edits made directly in FloorGen, outside WallSnap. Each one bumps the project revision. */
+  moveItem(id: string, to: { x?: number; y?: number; rotation?: number }) {
+    Object.assign(this.item(id), to)
+    this.rev++
+  }
+  resizeItem(id: string, to: { width?: number; height?: number; elevation?: number }) {
+    Object.assign(this.item(id), to)
+    this.rev++
+  }
+  deleteItem(id: string) {
+    this.item(id)
+    this.items = this.items.filter((i) => i.id !== id)
+    this.rev++
+  }
+  hideWall(id: string) {
+    this.hiddenWalls.add(id)
+    this.rev++
+  }
+  private item(id: string): MockItem {
+    return this.items.find((i) => i.id === id) ?? this.fail('test hook', `no item ${id}`)
   }
 
   private fail(tool: string, msg: string): never {
@@ -55,11 +79,14 @@ export class MockGateway implements Gateway {
         const ids = Array.isArray(a.ids) ? a.ids : []
         const first: unknown = ids[0]
         const tag = isRec(first) ? first.tag : undefined
+        const wanted = typeof first === 'string' ? first : undefined
         const types = Array.isArray(a.type) ? a.type : ['room', 'wall', 'opening', 'item']
-        const rows: unknown[] = tag
+        const rows: unknown[] = wanted
+          ? this.items.filter((i) => i.floor === floor && i.id === wanted).map(toRow)
+          : tag
           ? this.items.filter((i) => i.floor === floor && i.tag === tag).map(toRow)
           : [
-              ...(ENTITIES[floor] ?? []).filter((e) => types.includes(e.type)),
+              ...(ENTITIES[floor] ?? []).filter((e) => types.includes(e.type) && !this.hiddenWalls.has(String(e.id))),
               ...(types.includes('item') ? this.items.filter((i) => i.floor === floor).map(toRow) : []),
             ]
         return { rev: this.rev, data: { rows: structuredClone(rows) } }

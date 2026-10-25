@@ -4,7 +4,7 @@ import { THEME_KEY, isPref, resolveTheme } from './theme'
 
 const art = { width: 60, height: 45, u: 300, v: 120 }
 const base: SaveInputs = {
-  hasWall: true, loading: false, saving: false, conflict: false, partial: false, error: false,
+  hasWall: true, loading: false, saving: false, conflict: false, partial: false, error: false, detached: false, hasItem: false,
   problems: 0, baseline: art, current: art, verified: false,
 }
 const s = (o: Partial<SaveInputs>) => deriveSaveState({ ...base, ...o })
@@ -36,6 +36,11 @@ describe('save state', () => {
     expect(s({ ...edited, conflict: true })).toBe('conflict')
     expect(s({ ...edited, partial: true })).toBe('partial')
     expect(s({ ...edited, error: true })).toBe('error')
+  })
+  it('a detached artwork is its own state; drafting it back onto the wall is an unsaved edit, not a new artwork', () => {
+    expect(s({ baseline: null, current: null, detached: true, hasItem: true })).toBe('detached')
+    expect(s({ baseline: null, current: art, detached: true, hasItem: true })).toBe('unsaved')
+    expect(s({ baseline: null, current: art, hasItem: false })).toBe('new')
   })
   it('never claims verified while invalid or saving', () => {
     expect(s({ verified: true, problems: 1 })).toBe('invalid')

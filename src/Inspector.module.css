@@ -20,12 +20,13 @@ kbd { padding: 0 4px; font: inherit; font-size: 11px; background: var(--surface-
 .card strong { font-size: 12.5px; }
 .card p, .card ul { margin: 4px 0 0; font-size: 12px; line-height: 1.45; }
 .card ul { padding-left: 18px; }
-.conflict, .partial { border-color: var(--conflict); background: var(--conflict-soft); border-style: dashed; border-left-style: solid; }
+.conflict, .partial, .detached { border-color: var(--conflict); background: var(--conflict-soft); border-style: dashed; border-left-style: solid; }
 .error, .invalid { border-color: var(--danger); background: var(--danger-soft); }
 .reload { margin-top: 8px; padding: 4px 10px; font-size: 12px; cursor: pointer; background: var(--surface); border: 1px solid var(--border-strong); border-radius: 4px; }
 .reload:hover { background: var(--surface-2); }
 
 .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: auto; }
+.actions .primary { flex: 1 1 100%; }
 .primary, .secondary { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 8px 14px; font-size: 13px; font-weight: 600; border-radius: 5px; cursor: pointer; text-decoration: none; }
 .primary { flex: 1 1 140px; color: var(--accent-fg); background: var(--accent); border: 1px solid var(--accent); }
 .primary:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); }
@@ -37,9 +38,25 @@ kbd { padding: 0 4px; font: inherit; font-size: 11px; background: var(--surface-
 /* Quiet one-line notes for non-failure states; the header pill carries the state itself. */
 .note { margin: 0; padding: 0 2px; font-size: 12px; line-height: 1.4; color: var(--text-muted); }
 .note.saving, .note.loading { color: var(--accent); }
-.confirm { font-size: 12px; color: var(--text-muted); }
-.confirm summary { cursor: pointer; padding: 2px; border-radius: 3px; color: var(--ok); font-weight: 600; width: fit-content; }
-.confirm summary:hover { text-decoration: underline; }
-.confirm p { margin: 4px 0 0 2px; line-height: 1.45; color: var(--text-muted); }
+.confirmation { font-size: 12px; color: var(--text-muted); }
+.confirmation summary { cursor: pointer; padding: 2px; border-radius: 3px; color: var(--ok); font-weight: 600; width: fit-content; }
+.confirmation summary:hover { text-decoration: underline; }
+.confirmation p { margin: 4px 0 0 2px; line-height: 1.45; color: var(--text-muted); }
 
-@media (max-width: 900px) { .actions { margin-top: 4px; } }
+
+
+.actions .secondary { flex: 1 1 130px; padding: 7px 10px; font-weight: 550; }
+.secondary:disabled { cursor: not-allowed; color: var(--disabled-text); border-color: var(--border); }
+.secondary:disabled:hover { background: transparent; border-color: var(--border); }
+.spin { animation: spin 0.9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Reload would discard local edits: a clear, dismissible confirmation (Keep editing is the default). */
+.confirm { padding: 9px 11px; border: 1px solid var(--conflict); border-left-width: 4px; border-radius: 5px; background: var(--conflict-soft); }
+.confirm strong { font-size: 12.5px; }
+.confirm p { margin: 4px 0 8px; font-size: 12px; line-height: 1.4; }
+.confirmActions { display: flex; flex-wrap: wrap; gap: 8px; }
+.confirmActions button { padding: 5px 10px; font-size: 12px; cursor: pointer; border-radius: 4px; }
+.danger { color: var(--text); background: transparent; border: 1px solid var(--danger); }
+.danger:hover { background: var(--danger-soft); }
+.inputWrap input:disabled { cursor: not-allowed; color: var(--disabled-text); background: var(--disabled-bg); }

@@ -1,4 +1,4 @@
-import { flushPerp, validate, wallCoords, wallFrame, type WallFrame } from '../src/geometry'
+import { flushPerp, offWallReasons, validate, wallCoords, wallFrame, type WallFrame } from '../src/geometry'
 import type { ApplyResult, Artwork, FloorSummary, Opening, WallState } from '../src/types'
 import {
   BoundaryError, arr, id, isRec, parseFloor, parseItem, parseOpening, parseRoom, parseWall, rec,
@@ -9,6 +9,12 @@ import type { Gateway } from './gateway'
 export class StaleError extends Error {}
 /** A multi-step save stopped part-way: the message says exactly what FloorGen already holds. */
 export class PartialWriteError extends Error {}
+/** The wall or the saved artwork no longer exists in FloorGen. Never answered with stale or invented data. */
+export class MissingError extends Error {
+  constructor(message: string, readonly code: 'wall_missing' | 'artwork_missing') {
+    super(message)
+  }
+}
 export class ValidationError extends Error {
   constructor(readonly problems: string[]) {
     super(problems.join(' '))
@@ -45,9 +51,13 @@ export class WallSnapAdapter {
     return { rev: res.rev, rows: arr(rec(res.data, 'data').rows, 'data.rows') }
   }
 
-  private async floors(): Promise<FloorRow[]> {
+  private async floorsWithRev(): Promise<{ rev: number; floors: FloorRow[] }> {
     const res = await this.gw.call('list_floors', { project: this.project })
-    return arr(rec(res.data, 'data').floors, 'data.floors').map(parseFloor)
+    return { rev: res.rev, floors: arr(rec(res.data, 'data').floors, 'data.floors').map(parseFloor) }
+  }
+
+  private async floors(): Promise<FloorRow[]> {
+    return (await this.floorsWithRev()).floors
   }
 
   private async floorEntities(floor: string): Promise<FloorEntities> {
@@ -80,14 +90,30 @@ export class WallSnapAdapter {
     return out
   }
 
-  private async read(floorId: string, wallId: string) {
+  /**
+   * One consistent snapshot of a wall. It is assembled from several FloorGen reads, so every read must report the same
+   * project revision; if the project changed part-way the snapshot is re-read, and given up on after a few tries.
+   * With `itemId` the saved artwork is looked up by its persistent id (it may no longer be on the wall);
+   * without it, a WallSnap artwork lying flush on this wall is used.
+   */
+  private async read(floorId: string, wallId: string, itemId?: string) {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const r = await this.readOnce(floorId, wallId, itemId)
+      if (r.revs.every((x) => x === r.revs[0])) return { ...r, rev: r.revs[0] }
+    }
+    throw new StaleError('FloorGen kept changing while WallSnap was reading it. Try again in a moment.')
+  }
+
+  private async readOnce(floorId: string, wallId: string, itemId?: string) {
     id(floorId, 'floor id')
     id(wallId, 'wall id')
-    const floor = (await this.floors()).find((f) => f.id === floorId)
+    if (itemId) id(itemId, 'item id')
+    const fl = await this.floorsWithRev()
+    const floor = fl.floors.find((f) => f.id === floorId)
     if (!floor) throw new ValidationError(['Unknown floor.'])
     const e = await this.floorEntities(floorId)
     const wall = e.walls.find((w) => w.id === wallId)
-    if (!wall) throw new ValidationError(['Unknown wall.'])
+    if (!wall) throw new MissingError('This wall is no longer available in FloorGen.', 'wall_missing')
     const room = e.rooms.find((r) => r.wallIds.includes(wallId))
     if (!room) throw new ValidationError(['This wall has no room-facing side.'])
     const frame = wallFrame(wall.a, wall.b, room.centroid)
@@ -97,30 +123,59 @@ export class WallSnapAdapter {
     const openings: Opening[] = e.openings
       .filter((o) => o.wallId === wallId)
       .map((o) => ({ id: o.id, kind: o.kind, left: o.offset - o.width / 2, width: o.width, sill: o.sill, height: o.height }))
-    // Existing WallSnap artwork lying flush on this wall.
-    const tagged = (await this.rows(floorId, { type: ['item'], ids: [{ tag: TAG }] })).rows.map(parseItem)
-    const item = tagged.find((it) => {
-      const c = wallCoords(frame, it)
-      return c.u > -2 && c.u < frame.length + 2 && Math.abs(c.perp - flushPerp(wall.thickness, it.depth)) < 3
-    })
-    return { rev: e.rev, wall, room, frame, openings, item }
+
+    let item: ItemRow | undefined
+    let itemRev: number
+    if (itemId) {
+      const found = await this.rows(floorId, { type: ['item'], ids: [itemId] })
+      itemRev = found.rev
+      item = found.rows.filter((r) => isRec(r) && r.type === 'item').map(parseItem).find((it) => it.id === itemId)
+      if (!item) {
+        throw new MissingError('The artwork no longer exists in FloorGen (it may have been deleted). Select the wall again to start a new one.', 'artwork_missing')
+      }
+    } else {
+      // Existing WallSnap artwork lying flush on this wall.
+      const tagged = await this.rows(floorId, { type: ['item'], ids: [{ tag: TAG }] })
+      itemRev = tagged.rev
+      item = tagged.rows.map(parseItem).find((it) => {
+        const c = wallCoords(frame, it)
+        return c.u > -2 && c.u < frame.length + 2 && Math.abs(c.perp - flushPerp(wall.thickness, it.depth)) < 3
+      })
+    }
+    const offWall = item ? offWallReasons(frame, wall.thickness, item) : []
+    return { revs: [fl.rev, e.rev, itemRev], wall, room, frame, openings, item, offWall }
   }
 
   private toArtwork(frame: WallFrame, item: ItemRow): Artwork {
     return { width: item.width, height: item.height, u: wallCoords(frame, item).u, v: item.elevation }
   }
 
-  async loadWall(floorId: string, wallId: string): Promise<WallState> {
-    const r = await this.read(floorId, wallId)
+  /**
+   * Current state of a wall from FloorGen. Read-only: it never creates, resizes or moves anything. With `itemId` (Reload)
+   * the known artwork is read back by id; if it is no longer on this wall the answer says so and carries no position.
+   */
+  async loadWall(floorId: string, wallId: string, itemId?: string): Promise<WallState> {
+    const r = await this.read(floorId, wallId, itemId)
+    const wall = { id: wallId, floorId, length: r.frame.length, height: r.wall.height, openings: r.openings }
+    if (r.item && r.offWall.length) {
+      return {
+        rev: r.rev, wall, artwork: null, artworkId: r.item.id,
+        detached: {
+          message: 'Artwork is no longer positioned on this wall.', reasons: r.offWall,
+          width: r.item.width, height: r.item.height, elevation: r.item.elevation,
+        },
+      }
+    }
     return {
-      rev: r.rev,
-      wall: { id: wallId, floorId, length: r.frame.length, height: r.wall.height, openings: r.openings },
+      rev: r.rev, wall, detached: null,
       artwork: r.item ? this.toArtwork(r.frame, r.item) : null,
+      artworkId: r.item?.id ?? null,
     }
   }
 
-  async apply(floorId: string, wallId: string, art: Artwork, expectedRev: number): Promise<ApplyResult> {
-    const r = await this.read(floorId, wallId)
+  async apply(floorId: string, wallId: string, art: Artwork, expectedRev: number, knownItemId?: string | null): Promise<ApplyResult> {
+    // With a known item id, that very object is updated (even if it was dragged off the wall): never a duplicate.
+    const r = await this.read(floorId, wallId, knownItemId ?? undefined)
     if (r.rev !== expectedRev) throw new StaleError('The FloorGen project changed since you loaded this wall. Reload before applying.')
     const problems = validate({ length: r.frame.length, height: r.wall.height, openings: r.openings }, art)
     if (problems.length) throw new ValidationError(problems)
@@ -178,14 +233,16 @@ export class WallSnapAdapter {
     }
 
     // Success is reported only if a fresh read shows what was asked for.
-    const back = await this.read(floorId, wallId)
-    if (!back.item) throw new BoundaryError('Verification failed: the artwork was not found on the wall after saving.')
+    const back = await this.read(floorId, wallId, itemId)
+    if (!back.item || back.offWall.length) {
+      throw new BoundaryError('Verification failed: the artwork was not found hanging on the wall after saving.')
+    }
     const saved = this.toArtwork(back.frame, back.item)
     const perp = wallCoords(back.frame, back.item).perp - flushPerp(back.wall.thickness, back.item.depth)
     const off = (['width', 'height', 'u', 'v'] as const).filter((k) => Math.abs(saved[k] - art[k]) > VERIFY_TOL)
     if (off.length || Math.abs(perp) > FLUSH_TOL) {
       throw new BoundaryError(`Verification failed: FloorGen holds different ${off.join(', ') || 'wall-contact'} values than requested (rev ${rev}).`)
     }
-    return { artwork: saved, rev: back.rev, created }
+    return { artwork: saved, artworkId: itemId, rev: back.rev, created }
   }
 }

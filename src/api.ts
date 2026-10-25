@@ -15,11 +15,12 @@ async function req<T>(url: string, init?: RequestInit): Promise<T> {
 
 export const getStatus = () => req<{ adapter: 'floorgen' | 'mock'; project: string; viewer3dUrl: string | null }>('/api/status')
 export const getFloors = () => req<FloorSummary[]>('/api/floors')
-export const getWall = (floor: string, wall: string) =>
-  req<WallState>(`/api/wall?floor=${encodeURIComponent(floor)}&wall=${encodeURIComponent(wall)}`)
-export const putArtwork = (floorId: string, wallId: string, artwork: Artwork, rev: number) =>
+/** With `itemId` (Reload) the saved artwork is read back by its FloorGen id. Read-only either way. */
+export const getWall = (floor: string, wall: string, itemId?: string) =>
+  req<WallState>(`/api/wall?floor=${encodeURIComponent(floor)}&wall=${encodeURIComponent(wall)}${itemId ? `&item=${encodeURIComponent(itemId)}` : ''}`)
+export const putArtwork = (floorId: string, wallId: string, artwork: Artwork, rev: number, itemId: string | null) =>
   req<ApplyResult>('/api/artwork', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ floorId, wallId, artwork, rev }),
+    body: JSON.stringify({ floorId, wallId, artwork, rev, itemId }),
   })

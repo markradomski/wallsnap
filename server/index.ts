@@ -1,6 +1,6 @@
 import express from 'express'
 import type { Artwork } from '../src/types'
-import { PartialWriteError, StaleError, ValidationError, WallSnapAdapter } from './adapter'
+import { MissingError, PartialWriteError, StaleError, ValidationError, WallSnapAdapter } from './adapter'
 import { BoundaryError, isRec, num, rev } from './boundary'
 import { FloorGenGateway, GatewayError, type Gateway } from './gateway'
 import { MockGateway } from './mock'
@@ -36,6 +36,7 @@ export function createApp(gw: Gateway, project: string) {
         const message = e instanceof Error ? e.message : 'Unexpected error'
         if (e instanceof StaleError) return res.status(409).json({ error: message, code: 'stale' })
         if (e instanceof ValidationError) return res.status(422).json({ error: message, problems: e.problems })
+        if (e instanceof MissingError) return res.status(404).json({ error: message, code: e.code })
         if (e instanceof PartialWriteError) return res.status(502).json({ error: message, code: 'partial' })
         if (e instanceof SafetyError) return res.status(403).json({ error: message })
         // Server-side log only; error text comes from FloorGen and never contains credentials.
@@ -47,7 +48,7 @@ export function createApp(gw: Gateway, project: string) {
 
   app.get('/api/status', (_q, res) => res.json({ adapter: gw.kind, project, viewer3dUrl: gw.kind === 'floorgen' ? viewer3dUrl(project) : null }))
   app.get('/api/floors', wrap(() => adapter.listFloors()))
-  app.get('/api/wall', wrap((q) => adapter.loadWall(String(q.query.floor), String(q.query.wall))))
+  app.get('/api/wall', wrap((q) => adapter.loadWall(String(q.query.floor), String(q.query.wall), typeof q.query.item === 'string' ? q.query.item : undefined)))
   app.put('/api/artwork', wrap(async (q) => {
     const body: unknown = q.body
     if (!isRec(body) || typeof body.floorId !== 'string' || typeof body.wallId !== 'string') {
@@ -60,7 +61,8 @@ export function createApp(gw: Gateway, project: string) {
       throw new ValidationError(['Malformed revision.'])
     }
     const art = parseArtwork(body.artwork)
-    return adapter.apply(body.floorId, body.wallId, art, r)
+    const itemId = typeof body.itemId === 'string' ? body.itemId : null
+    return adapter.apply(body.floorId, body.wallId, art, r, itemId)
   }))
   return app
 }

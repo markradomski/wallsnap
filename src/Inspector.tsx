@@ -1,6 +1,6 @@
 import styles from './Inspector.module.css'
 import { SAVE_GLYPH, SAVE_LABEL, type SaveState } from './saveState'
-import type { Artwork } from './types'
+import type { Artwork, Detached } from './types'
 
 export type FieldKey = keyof Artwork
 
@@ -15,23 +15,31 @@ const POSITION: { key: FieldKey; label: string }[] = [
 
 interface Props {
   text: Record<string, string>
+  disabled: boolean
   valid: Record<FieldKey, boolean>
   onType: (key: FieldKey, value: string) => void
   problems: string[]
   save: SaveState
   detail: string
-  onReload: (() => void) | null
+  detached: Detached | null
+  onPlaceBack: () => void
   canApply: boolean
   onApply: () => void
+  reloading: boolean
+  canReload: boolean
+  onReload: () => void
+  confirmReload: boolean
+  onDiscardAndReload: () => void
+  onKeepEditing: () => void
   viewerUrl: string | null
 }
 
-function Field({ f, text, valid, onType }: { f: { key: FieldKey; label: string } } & Pick<Props, 'text' | 'valid' | 'onType'>) {
+function Field({ f, text, valid, onType, disabled }: { f: { key: FieldKey; label: string } } & Pick<Props, 'text' | 'valid' | 'onType' | 'disabled'>) {
   return (
     <label className={styles.field}>
       <span className={styles.label}>{f.label}</span>
       <span className={styles.inputWrap}>
-        <input inputMode="decimal" value={text[f.key] ?? ''} aria-invalid={!valid[f.key]} onChange={(e) => onType(f.key, e.target.value)} />
+        <input inputMode="decimal" disabled={disabled} value={text[f.key] ?? ''} aria-invalid={!valid[f.key]} onChange={(e) => onType(f.key, e.target.value)} />
         <span className={styles.unit} aria-hidden="true">cm</span>
       </span>
     </label>
@@ -40,9 +48,27 @@ function Field({ f, text, valid, onType }: { f: { key: FieldKey; label: string }
 
 /** Right-hand properties inspector: size, position, save status, actions. */
 export function Inspector(p: Props) {
-  const prominent = ['conflict', 'partial', 'error', 'invalid'].includes(p.save)
+  const prominent = ['conflict', 'partial', 'error', 'invalid', 'detached'].includes(p.save)
   return (
     <form className={styles.inspector} onSubmit={(e) => { e.preventDefault(); p.onApply() }}>
+      {p.confirmReload && (
+        // Reload would replace local edits, so it asks first. "Keep editing" is the default, safe choice.
+        <div
+          className={styles.confirm}
+          role="alertdialog"
+          aria-labelledby="reload-confirm-title"
+          data-testid="reload-confirm"
+          onKeyDown={(e) => e.key === 'Escape' && p.onKeepEditing()}
+        >
+          <strong id="reload-confirm-title">Discard your unsaved edits?</strong>
+          <p>Reloading replaces them with what FloorGen currently holds.</p>
+          <div className={styles.confirmActions}>
+            <button type="button" className={styles.reload} autoFocus onClick={p.onKeepEditing}>Keep editing</button>
+            <button type="button" className={styles.danger} onClick={p.onDiscardAndReload}>Discard and reload</button>
+          </div>
+        </div>
+      )}
+
       {prominent ? (
         // Failures stay prominent and actionable.
         <div className={[styles.card, styles[p.save]].filter(Boolean).join(' ')} role="alert" data-testid="status-card">
@@ -50,13 +76,25 @@ export function Inspector(p: Props) {
           {p.save === 'invalid' ? (
             <ul>{p.problems.map((m) => <li key={m}>{m}</li>)}</ul>
           ) : (
-            <p data-testid="message">{p.detail}</p>
+            <>
+              <p data-testid="message">{p.detail}</p>
+              {p.save === 'detached' && p.detached && (
+                <>
+                  <ul>{p.detached.reasons.map((m) => <li key={m}>{m}</li>)}</ul>
+                  <p>
+                    It is still in FloorGen as {p.detached.width} × {p.detached.height} cm. Put it back on this wall, set its
+                    position, then Apply to move that same artwork.
+                  </p>
+                  <button type="button" className={styles.reload} onClick={p.onPlaceBack}>Place back on this wall</button>
+                </>
+              )}
+              {(p.save === 'conflict' || p.save === 'partial') && <p>Use Reload from FloorGen below to see the current state.</p>}
+            </>
           )}
-          {p.onReload && <button type="button" className={styles.reload} onClick={p.onReload}>Reload from FloorGen</button>}
         </div>
       ) : p.save === 'verified' ? (
         // The header already says "Saved · verified"; here is only a brief confirmation with the read-back on demand.
-        <details className={styles.confirm} data-testid="status-note">
+        <details className={styles.confirmation} data-testid="status-note">
           <summary><span aria-hidden="true">✓</span> Read back from FloorGen</summary>
           <p data-testid="message">{p.detail}</p>
         </details>
@@ -87,6 +125,12 @@ export function Inspector(p: Props) {
 
       <div className={styles.actions}>
         <button type="submit" className={styles.primary} disabled={!p.canApply}>Apply to FloorGen</button>
+        <button type="button" className={styles.secondary} onClick={p.onReload} disabled={!p.canReload} aria-busy={p.reloading}>
+          <svg className={p.reloading ? styles.spin : undefined} viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
+            <path d="M13.5 8a5.5 5.5 0 1 1-1.7-3.97M13.5 2v3.2h-3.2" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          {p.reloading ? 'Reloading…' : 'Reload from FloorGen'}
+        </button>
         {p.viewerUrl && (
           // A plain link: opens a new tab, so this editing session and unsaved changes stay untouched.
           <a className={styles.secondary} href={p.viewerUrl} target="_blank" rel="noopener noreferrer">

@@ -16,7 +16,7 @@
 .verified, .synced { background: rgba(95, 214, 138, 0.16); color: #7ae8a0; border-color: rgba(95, 214, 138, 0.4); }
 .unsaved, .new { background: rgba(242, 193, 78, 0.16); color: #f6cf6e; border-color: rgba(242, 193, 78, 0.4); }
 .saving, .loading { background: rgba(167, 139, 250, 0.2); color: #cdbfff; border-color: rgba(167, 139, 250, 0.45); }
-.conflict, .partial { background: rgba(255, 154, 92, 0.18); color: #ffb383; border-color: rgba(255, 154, 92, 0.45); }
+.conflict, .partial, .detached { background: rgba(255, 154, 92, 0.18); color: #ffb383; border-color: rgba(255, 154, 92, 0.45); }
 .error, .invalid { background: rgba(255, 138, 128, 0.18); color: #ffaaa2; border-color: rgba(255, 138, 128, 0.45); }
 .none { color: var(--chrome-muted); }
 

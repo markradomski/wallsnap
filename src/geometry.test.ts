@@ -285,3 +285,60 @@ describe('dimensionLabelPlacement', () => {
     expect(p.u).toBe(25)
   })
 })
+
+import { ATTACH_TOL_CM, flushPerp, offWallReasons, type PlacedItem } from './geometry'
+
+describe('offWallReasons', () => {
+  const room: Pt = { x: 400, y: 300 }
+  const thickness = 15
+  const depth = 3
+  // North wall A(100,100) -> B(700,100), room to the south: faces rotation 0, flush at y = 100 + 9.
+  const north = wallFrame({ x: 100, y: 100 }, { x: 700, y: 100 }, room)
+  const placed = (f = north, u = 250, extra: Partial<PlacedItem> = {}, rotation = facingRotation(f.normal)): PlacedItem => {
+    const p = planPoint(f, u, flushPerp(thickness, depth))
+    return { x: p.x, y: p.y, rotation, width: 80, height: 50, depth, elevation: 120, ...extra }
+  }
+
+  it('accepts an item flush on the wall, facing the room', () => {
+    expect(offWallReasons(north, thickness, placed())).toEqual([])
+  })
+  it('accepts it on reversed and slanted walls too', () => {
+    const reversed = wallFrame({ x: 700, y: 100 }, { x: 100, y: 100 }, room)
+    const slanted = wallFrame({ x: 0, y: 0 }, { x: 300, y: 400 }, { x: 400, y: 100 })
+    expect(offWallReasons(reversed, thickness, placed(reversed))).toEqual([])
+    expect(offWallReasons(slanted, thickness, placed(slanted, 100))).toEqual([])
+  })
+  it('tolerates small snapping noise but not a visible gap', () => {
+    const p = placed()
+    expect(offWallReasons(north, thickness, { ...p, y: p.y + ATTACH_TOL_CM - 0.1 })).toEqual([])
+    expect(offWallReasons(north, thickness, { ...p, y: p.y + 10 })[0]).toMatch(/10 cm in front of the wall surface/)
+  })
+  it('reports an item pushed behind the wall surface', () => {
+    const p = placed()
+    expect(offWallReasons(north, thickness, { ...p, y: p.y - 20 })[0]).toMatch(/behind the wall surface/)
+  })
+  it('reports an item dragged to the middle of the room', () => {
+    expect(offWallReasons(north, thickness, { ...placed(), y: 300 }).length).toBeGreaterThan(0)
+  })
+  it('reports an item rotated away from facing the room', () => {
+    expect(offWallReasons(north, thickness, placed(north, 250, {}, 90))[0]).toMatch(/turned 90° away/)
+    expect(offWallReasons(north, thickness, placed(north, 250, {}, 180))[0]).toMatch(/turned 180° away/)
+  })
+  it('treats 360° as 0° and small rotation noise as facing', () => {
+    expect(offWallReasons(north, thickness, placed(north, 250, {}, 360))).toEqual([])
+    expect(offWallReasons(north, thickness, placed(north, 250, {}, 1))).toEqual([])
+  })
+  it('reports a centre beyond the wall ends even when flush on the plane', () => {
+    expect(offWallReasons(north, thickness, placed(north, 650))).toContain('Its centre is beyond the ends of this wall.')
+    expect(offWallReasons(north, thickness, placed(north, -5))).toContain('Its centre is beyond the ends of this wall.')
+  })
+  it('does not call a partly overhanging item detached: that is a size/bounds problem the editor shows', () => {
+    expect(offWallReasons(north, thickness, placed(north, 590, { width: 80 }))).toEqual([]) // edge at u 630 > 600? centre inside
+  })
+  it('never alters its inputs', () => {
+    const p = placed()
+    const copy = { ...p }
+    offWallReasons(north, thickness, p)
+    expect(p).toEqual(copy)
+  })
+})

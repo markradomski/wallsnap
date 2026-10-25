@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { PartialWriteError, StaleError, ValidationError, WallSnapAdapter } from './adapter'
+import { MissingError, PartialWriteError, StaleError, ValidationError, WallSnapAdapter } from './adapter'
+import { flushPerp, planPoint, wallFrame, type Pt } from '../src/geometry'
+import { ENTITIES } from './fixture'
 import { GatewayError, type Gateway } from './gateway'
 import { Recorder } from './helpers.test-util'
 import { MockGateway } from './mock'
@@ -176,5 +178,205 @@ describe('partial writes are described honestly', () => {
       .apply('f_first', 'fl_east', { width: 60, height: 40, u: 100, v: 100 }, s.rev).catch((e: unknown) => e)
     expect(err).toBeInstanceOf(GatewayError)
     expect(err).not.toBeInstanceOf(PartialWriteError)
+  })
+})
+
+describe('Reload from FloorGen: reading the saved artwork back by its item id', () => {
+  /** A wall with a saved artwork, then edits made "directly in FloorGen" through the mock hooks. */
+  const saved = async (wall = 'fl_east', art = { width: 60, height: 40, u: 100, v: 100 }) => {
+    const s0 = await adapter.loadWall('f_first', wall)
+    const r = await adapter.apply('f_first', wall, art, s0.rev)
+    return { id: r.artworkId, rev: r.rev, wall }
+  }
+  const frameOf = (wall: string) => {
+    const w = ENTITIES.f_first.find((e) => e.id === wall) as { a: Pt; b: Pt }
+    return wallFrame(w.a, w.b, { x: 400, y: 300 })
+  }
+
+  it('knows the artwork id after loading and after applying', async () => {
+    const { id, wall } = await saved()
+    expect(id).toMatch(/^i_/)
+    expect((await adapter.loadWall('f_first', wall)).artworkId).toBe(id)
+  })
+
+  it('shows an external move: new u and v, the same id, and the new revision', async () => {
+    const { id, wall, rev } = await saved()
+    const f = frameOf(wall)
+    const p = planPoint(f, 250, flushPerp(15, 3))
+    mock.moveItem(id, { x: p.x, y: p.y })
+    mock.resizeItem(id, { elevation: 150 })
+    const s = await adapter.loadWall('f_first', wall, id)
+    expect(s.detached).toBeNull()
+    expect(s.artworkId).toBe(id)
+    expect(s.artwork).toMatchObject({ width: 60, height: 40, v: 150 })
+    expect(s.artwork!.u).toBeCloseTo(250, 6)
+    expect(s.rev).toBeGreaterThan(rev)
+  })
+
+  it('shows an external resize', async () => {
+    const { id, wall } = await saved()
+    mock.resizeItem(id, { width: 90, height: 55 })
+    expect((await adapter.loadWall('f_first', wall, id)).artwork).toMatchObject({ width: 90, height: 55, v: 100 })
+  })
+
+  it('measures u from endpoint A on a reversed wall (fl_south runs east to west)', async () => {
+    const { id, wall } = await saved('fl_south', { width: 40, height: 40, u: 300, v: 120 })
+    const f = frameOf(wall)
+    expect(f.a.x).toBe(700) // endpoint A is the east end
+    const p = planPoint(f, 90, flushPerp(15, 3)) // 90 cm from A, which is x = 610
+    expect(p.x).toBeCloseTo(610, 6)
+    mock.moveItem(id, { x: p.x, y: p.y })
+    expect((await adapter.loadWall('f_first', wall, id)).artwork!.u).toBeCloseTo(90, 6)
+  })
+
+  it('agrees with the artwork shown by the plain wall load (one conversion, not two)', async () => {
+    const { id, wall } = await saved()
+    expect((await adapter.loadWall('f_first', wall, id)).artwork).toEqual((await adapter.loadWall('f_first', wall)).artwork)
+  })
+
+  it('performs no writes and never creates, resizes or moves anything', async () => {
+    const { id, wall } = await saved()
+    mock.resizeItem(id, { width: 70 })
+    rec.calls.length = 0
+    await adapter.loadWall('f_first', wall, id)
+    expect(rec.writes()).toEqual([])
+    expect(rec.calls.length).toBeGreaterThan(0)
+    expect(rec.calls.every((c) => ['list_floors', 'list_entities'].includes(c.tool))).toBe(true)
+  })
+
+  describe('artwork no longer on the wall', () => {
+    it('moved away from the wall: reports it and returns no coordinates', async () => {
+      const { id, wall } = await saved()
+      mock.moveItem(id, { x: 300 }) // fl_east is vertical: x is across the wall, so this drags it into the room
+      const s = await adapter.loadWall('f_first', wall, id)
+      expect(s.artwork).toBeNull() // no manufactured wall-relative position
+      expect(s.artworkId).toBe(id)
+      expect(s.detached?.message).toBe('Artwork is no longer positioned on this wall.')
+      expect(s.detached?.reasons.join(' ')).toMatch(/wall surface/)
+      expect(s.detached).toMatchObject({ width: 60, height: 40, elevation: 100 })
+    })
+
+    it('rotated away from facing the room', async () => {
+      const { id, wall } = await saved()
+      mock.moveItem(id, { rotation: 0 }) // an east wall faces west: correct rotation is 90
+      const s = await adapter.loadWall('f_first', wall, id)
+      expect(s.artwork).toBeNull()
+      expect(s.detached?.reasons.join(' ')).toMatch(/turned 90° away/)
+    })
+
+    it('moved beyond the ends of the wall', async () => {
+      const { id, wall } = await saved()
+      const p = planPoint(frameOf(wall), 900, flushPerp(15, 3))
+      mock.moveItem(id, { x: p.x, y: p.y })
+      expect((await adapter.loadWall('f_first', wall, id)).detached?.reasons.join(' ')).toMatch(/beyond the ends/)
+    })
+
+    it('an oversized or too-high artwork still loads with its real numbers (the editor then flags them)', async () => {
+      const { id, wall } = await saved()
+      mock.resizeItem(id, { height: 260, elevation: 20 })
+      const s = await adapter.loadWall('f_first', wall, id)
+      expect(s.detached).toBeNull()
+      expect(s.artwork).toMatchObject({ height: 260, v: 20 })
+    })
+
+    it('is not silently projected back onto the wall: the item is untouched after Reload', async () => {
+      const { id, wall } = await saved()
+      mock.moveItem(id, { x: 300 })
+      await adapter.loadWall('f_first', wall, id)
+      const rows = (await mock.call('list_entities', { floor: 'f_first', type: ['item'] })).data as { rows: { x: number }[] }
+      expect(rows.rows[0].x).toBe(300)
+    })
+
+    it('recovery uses the existing placement workflow: Apply by id moves the same object back, no duplicate', async () => {
+      const { id, wall } = await saved()
+      mock.moveItem(id, { x: 300, rotation: 0 })
+      const s = await adapter.loadWall('f_first', wall, id)
+      const r = await adapter.apply('f_first', wall, { width: 60, height: 40, u: 150, v: 100 }, s.rev, id)
+      expect(r.artworkId).toBe(id)
+      expect(r.created).toBe(false)
+      const now = await adapter.loadWall('f_first', wall, id)
+      expect(now.detached).toBeNull()
+      expect(now.artwork!.u).toBeCloseTo(150)
+      const rows = (await mock.call('list_entities', { floor: 'f_first', type: ['item'] })).data as { rows: unknown[] }
+      expect(rows.rows).toHaveLength(1)
+    })
+  })
+
+  describe('missing things', () => {
+    it('a deleted artwork is an error, not stale data', async () => {
+      const { id, wall } = await saved()
+      mock.deleteItem(id)
+      await expect(adapter.loadWall('f_first', wall, id)).rejects.toMatchObject({ code: 'artwork_missing' })
+      await expect(adapter.loadWall('f_first', wall, id)).rejects.toBeInstanceOf(MissingError)
+    })
+
+    it('Apply with the id of a deleted artwork refuses instead of creating a duplicate', async () => {
+      const { id, wall, rev } = await saved()
+      mock.deleteItem(id)
+      const s = await adapter.loadWall('f_first', wall) // plain load: no artwork
+      expect(s.artwork).toBeNull()
+      await expect(adapter.apply('f_first', wall, { width: 60, height: 40, u: 100, v: 100 }, s.rev, id)).rejects.toMatchObject({ code: 'artwork_missing' })
+      const rows = (await mock.call('list_entities', { floor: 'f_first', type: ['item'] })).data as { rows: unknown[] }
+      expect(rows.rows).toHaveLength(0)
+      expect(rev).toBeGreaterThan(0)
+    })
+
+    it('a wall that is gone is reported as such', async () => {
+      const { id, wall } = await saved()
+      mock.hideWall(wall)
+      await expect(adapter.loadWall('f_first', wall, id)).rejects.toMatchObject({ code: 'wall_missing' })
+    })
+
+    it('an unknown item id is a missing artwork', async () => {
+      await expect(adapter.loadWall('f_first', 'fl_east', 'i_nope')).rejects.toMatchObject({ code: 'artwork_missing' })
+    })
+  })
+
+  describe('revisions', () => {
+    it('Reload returns the current revision, and the next Apply uses it (the old one is refused)', async () => {
+      const { id, wall, rev: oldRev } = await saved()
+      const p = planPoint(frameOf(wall), 250, flushPerp(15, 3))
+      mock.moveItem(id, { x: p.x, y: p.y }) // external edit bumps the revision
+      const art = { width: 60, height: 40, u: 120, v: 100 }
+      await expect(adapter.apply('f_first', wall, art, oldRev, id)).rejects.toBeInstanceOf(StaleError)
+      const reloaded = await adapter.loadWall('f_first', wall, id)
+      expect(reloaded.rev).toBeGreaterThan(oldRev)
+      const r = await adapter.apply('f_first', wall, art, reloaded.rev, id)
+      expect(r.artworkId).toBe(id)
+      expect(r.artwork.u).toBeCloseTo(120)
+    })
+
+    it('if FloorGen changes while reading, the snapshot is re-read and is consistent', async () => {
+      const { id, wall } = await saved()
+      let changed = false
+      const racing: Gateway = {
+        kind: 'mock',
+        call: async (tool, args) => {
+          const res = await mock.call(tool, args)
+          if (!changed && tool === 'list_entities') {
+            changed = true
+            mock.touch() // an external edit lands between two of Reload's reads
+          }
+          return res
+        },
+      }
+      const s = await new WallSnapAdapter(racing, 'mock-project').loadWall('f_first', wall, id)
+      expect(changed).toBe(true)
+      const now = await mock.call('list_floors', {})
+      expect(s.rev).toBe(now.rev) // the retry saw the post-edit revision throughout
+    })
+
+    it('if FloorGen keeps changing it gives up with a stale error rather than mixing revisions', async () => {
+      const { id, wall } = await saved()
+      const churn: Gateway = {
+        kind: 'mock',
+        call: async (tool, args) => {
+          const res = await mock.call(tool, args)
+          mock.touch()
+          return res
+        },
+      }
+      await expect(new WallSnapAdapter(churn, 'mock-project').loadWall('f_first', wall, id)).rejects.toBeInstanceOf(StaleError)
+    })
   })
 })

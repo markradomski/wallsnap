@@ -34,6 +34,15 @@ A full-height workspace: a dark navy top bar (floor and wall pickers, save statu
 
 Save status is always one of: not saved yet, unsaved changes, saving, saved · verified (only after read-back verification and until the next edit), loaded from FloorGen, revision conflict, partially saved, save failed, or fix validation errors. A multi-step write that stops part-way says exactly what FloorGen holds.
 
+## Reload from FloorGen
+
+If the artwork is moved or resized directly in FloorGen, **Reload from FloorGen** (in the inspector) re-reads it by its persistent FloorGen item id and refreshes the SVG, the numeric inputs and the known project revision together. It is manual (no polling or subscriptions) and read-only: it never creates, resizes or moves anything.
+
+- **Local edits** are never discarded silently: Reload asks first (*Keep editing* is the default; Escape cancels).
+- **Off the wall:** FloorGen has no permanent wall constraint, so the item is checked for being flush on this wall's plane (within 2 cm), facing into the room (within 2°) and centred along the wall. If not, WallSnap says *Artwork is no longer positioned on this wall* with the reason, draws no artwork and invents no coordinates. *Place back on this wall* drafts it with its own size; Apply then moves that same FloorGen object (by id, never a duplicate).
+- **Deleted artwork / missing wall / failed fetch** are errors; nothing stale is loaded and local edits stay as they were.
+- **Revisions:** the wall is read in several calls that must all report the same project revision (re-read if it changed part-way, otherwise reported as stale). The next Apply uses the reloaded revision and keeps the stale-edit protection.
+
 ## Coordinates
 
 - `u` (shown as *Horizontal position*): distance from wall **endpoint A** to the artwork centre, in cm. Endpoint A is authoritative whatever direction the wall is stored in or which face you view; the SVG always draws A on the left and labels A and B.
@@ -56,6 +65,9 @@ Re-reads the project; rejects with 409 if its `rev` differs from the loaded one 
 Height <= 200 cm; inside wall bounds; no overlap with doors or windows; ground-floor walls >= 650 cm are treated as the reserved studio wall and disabled.
 
 ## Known limitations
+
+- Reload and Apply act on the artwork id known in this session (from loading the wall, or from Apply). If an artwork was moved off its wall *before* the wall was opened in WallSnap, WallSnap cannot tell which wall it belonged to, so that wall opens as having no artwork.
+- An artwork that still hangs on the wall but has an out-of-range size or elevation (for example taller than 200 cm) is shown with its real numbers and the usual validation errors, not treated as detached.
 
 - Live-verified (2026-10-25, dev copy only): authenticated MCP connection; read of real walls; `place_on_wall` + `update_items` create (south wall, rotation 180) and update (north wall) with read-back, cross-checked through a separate FloorGen connection and the 2D render. **Not verified:** FloorGen's 3D view, walls with openings, diagonal real walls, and the stale-revision path against the real server. Unit and e2e tests use the mock gateway and synthetic geometry.
 - Apply uses `place_on_wall` (FloorGen sets flush contact and facing) and `update_items` for size. `place_on_wall` validates the item's *current* size, so Apply resizes first and moves last: an existing item is resized (`update_items`) then moved (`place_on_wall`); a new 100×70 catalogue picture is first hung where it fits, then resized, then moved to the exact `u`/`v` (up to three writes). FloorGen's error `code`, `message` and `hint` are shown in the UI.
