@@ -48,15 +48,15 @@ function point(v: unknown, what: string): Pt {
   return { x: num(r.x, `${what}.x`), y: num(r.y, `${what}.y`) }
 }
 
-export interface FloorRow { id: string; name: string; kind: string }
+export interface FloorRow { id: string; name: string; kind: string; /** Storey height, cm. */ height: number }
 export interface WallRow { id: string; a: Pt; b: Pt; thickness: number; height: number }
 export interface OpeningRow { id: string; kind: string; wallId: string; offset: number; width: number; sill: number; height: number }
 export interface RoomRow { key: string; name: string; wallIds: string[]; centroid: Pt }
-export interface ItemRow { id: string; x: number; y: number; rotation: number; width: number; height: number; depth: number; elevation: number }
+export interface ItemRow { id: string; x: number; y: number; rotation: number; width: number; height: number; depth: number; elevation: number; /** #rrggbb, when FloorGen reports one. */ color?: string }
 
 export function parseFloor(v: unknown): FloorRow {
   const r = rec(v, 'floor')
-  return { id: id(r.id, 'floor.id'), name: str(r.name, 'floor.name'), kind: str(r.kind, 'floor.kind') }
+  return { id: id(r.id, 'floor.id'), name: str(r.name, 'floor.name'), kind: str(r.kind, 'floor.kind'), height: positive(r.height, 'floor.height') }
 }
 export function parseWall(v: unknown): WallRow {
   const r = rec(v, 'wall')
@@ -90,5 +90,6 @@ export function parseItem(v: unknown): ItemRow {
     id: id(r.id, 'item.id'), x: num(r.x, 'item.x'), y: num(r.y, 'item.y'), rotation: num(r.rotation, 'item.rotation'),
     width: positive(e.width, 'item.width'), height: positive(e.height, 'item.height'),
     depth: positive(e.depth, 'item.depth'), elevation: num(e.elevation, 'item.elevation'),
+    color: typeof e.color === 'string' && /^#[0-9a-f]{6}$/i.test(e.color) ? e.color.toLowerCase() : undefined,
   }
 }

@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
 import styles from './App.module.css'
-import { ApiError, getFloors, getStatus, getWall, putArtwork } from './api'
+import { ApiError, getFloors, getPlan, getStatus, getWall, putArtwork } from './api'
 import { Elevation } from './Elevation'
 import { clampToWall, round1, validate } from './geometry'
 import { DEFAULT_IMAGE_WIDTH_CM, acceptImageFile, decodeImage, frameForRatio, ratioDiffers } from './image'
@@ -9,7 +9,10 @@ import { Inspector, type FieldKey } from './Inspector'
 import { deriveSaveState, sameArtwork } from './saveState'
 import { useTheme } from './theme'
 import { TopBar } from './TopBar'
-import type { Artwork, FloorSummary, WallState } from './types'
+import type { Artwork, FloorSummary, PlanContext, WallState } from './types'
+
+// Three.js is only ever reached through this dynamic import: the 2D editor never downloads the 3D renderer.
+const Viewer3D = lazy(() => import('./viewer3d/Viewer3D'))
 
 const DEFAULT_ART: Artwork = { width: 60, height: 45, u: 0, v: 120 }
 const KEYS: FieldKey[] = ['width', 'height', 'u', 'v']
@@ -30,6 +33,9 @@ export function App() {
   const [theme, setTheme] = useTheme()
   const [adapter, setAdapter] = useState('')
   const [viewerUrl, setViewerUrl] = useState<string | null>(null)
+  const [view, setView] = useState<'2d' | '3d'>('2d')
+  const [plan, setPlan] = useState<PlanContext | null>(null)
+  const [planError, setPlanError] = useState<string | null>(null)
   const [projectId, setProjectId] = useState('')
   const [floors, setFloors] = useState<FloorSummary[]>([])
   const [floorId, setFloorId] = useState('')
@@ -116,6 +122,26 @@ export function App() {
     })
     return () => { cancelled = true }
   }, [imageKey, store])
+
+  // Plan-space geometry for the 3D preview: read-only, fetched only while the 3D view is open, and re-read when the wall or
+  // the saved artwork changes (never on a local edit: edits are converted in the browser from this geometry).
+  const planKey = state ? `${state.wall.floorId}/${state.wall.id}/${state.artworkId ?? ''}/${state.rev}` : ''
+  useEffect(() => {
+    if (view !== '3d' || !state) return
+    let cancelled = false
+    setPlanError(null)
+    getPlan(state.wall.floorId, state.wall.id, state.artworkId)
+      .then((p) => !cancelled && setPlan(p))
+      .catch((e: unknown) => {
+        if (cancelled) return
+        setPlan(null)
+        setPlanError(e instanceof Error ? e.message : 'Unexpected error')
+      })
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, planKey])
 
   const clearOutcome = () => {
     setResult(null)
@@ -312,23 +338,46 @@ export function App() {
         <main className={styles.editor}>
           {state ? (
             <>
-              <div className={styles.meta}>
-                {wallLabel && <span className={styles.wallName} title={wallLabel} data-testid="wall-name">{wallLabel}</span>}
-                <span data-testid="wall-dims">Wall: {round1(state.wall.length)} × {round1(state.wall.height)} cm</span>
-                <span>Endpoint A is at the left</span>
-              </div>
-              <div className={styles.stage}>
-                <div className={styles.canvas} style={{ ['--aspect' as string]: state.wall.length / state.wall.height }}>
-                  <Elevation
-                    wall={state.wall}
-                    artwork={art}
-                    image={image?.url ?? null}
-                    lockRatio={!!image && lock}
-                    onImageError={() => { showImage(null); setImageNote(DAMAGED) }}
-                    onChange={edit}
-                  />
+              <div className={styles.toolbar}>
+                <div className={styles.meta}>
+                  {wallLabel && <span className={styles.wallName} title={wallLabel} data-testid="wall-name">{wallLabel}</span>}
+                  <span data-testid="wall-dims">Wall: {round1(state.wall.length)} × {round1(state.wall.height)} cm</span>
+                  <span>Endpoint A is at the left</span>
+                </div>
+                <div className={styles.views} role="group" aria-label="View">
+                  {(['2d', '3d'] as const).map((v) => (
+                    <button key={v} type="button" aria-pressed={view === v} data-testid={`view-${v}`} onClick={() => setView(v)}>{v.toUpperCase()}</button>
+                  ))}
                 </div>
               </div>
+              {view === '2d' ? (
+                <div className={styles.stage}>
+                  <div className={styles.canvas} style={{ ['--aspect' as string]: state.wall.length / state.wall.height }}>
+                    <Elevation
+                      wall={state.wall}
+                      artwork={art}
+                      image={image?.url ?? null}
+                      lockRatio={!!image && lock}
+                      onImageError={() => { showImage(null); setImageNote(DAMAGED) }}
+                      onChange={edit}
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div className={styles.stage3d}>
+                  <Suspense fallback={<p className={styles.empty} role="status">Loading the 3D viewer…</p>}>
+                    <Viewer3D
+                      project={projectId}
+                      // Only a plan that belongs to the wall on screen: never draw one wall's geometry on another.
+                      plan={plan && plan.wall.id === state.wall.id && plan.floorId === state.wall.floorId ? plan : null}
+                      planError={planError}
+                      art={art}
+                      imageUrl={image?.url ?? null}
+                      unsaved={!!art && (!state.artwork || !sameArtwork(art, state.artwork))}
+                    />
+                  </Suspense>
+                </div>
+              )}
             </>
           ) : (
             <p className={styles.empty}>{loading ? 'Loading…' : 'Select a floor and wall in the bar above to start placing artwork.'}</p>

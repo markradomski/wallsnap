@@ -380,3 +380,71 @@ describe('Reload from FloorGen: reading the saved artwork back by its item id', 
     })
   })
 })
+
+describe('planContext: read-only plan geometry for the 3D preview', () => {
+  it('lists floors lowest first and derives the selected floor base from real storey heights', async () => {
+    const ground = await adapter.planContext('f_ground', 'gs_west')
+    const first = await adapter.planContext('f_first', 'fl_north')
+    expect(first.floors.map((f) => [f.id, f.height])).toEqual([['f_ground', 250], ['f_first', 250]])
+    expect(ground.baseCm).toBe(0)
+    expect(first.baseCm).toBe(250)
+  })
+
+  it('returns the wall as stored (endpoint A first), with its thickness and the room-facing normal, for every direction', async () => {
+    const north = (await adapter.planContext('f_first', 'fl_north')).wall // A(100,100) -> B(700,100); room to the south
+    expect([north.a, north.b, north.length, north.thickness]).toEqual([{ x: 100, y: 100 }, { x: 700, y: 100 }, 600, 15])
+    expect(north.normal).toEqual({ x: 0, y: 1 })
+    const south = (await adapter.planContext('f_first', 'fl_south')).wall // runs east to west: A(700,500) -> B(100,500)
+    expect(south.a).toEqual({ x: 700, y: 500 })
+    expect(south.normal).toEqual({ x: 0, y: -1 })
+    const east = (await adapter.planContext('f_first', 'fl_east')).wall // A(700,100) -> B(700,500); room to the west
+    expect(east.normal).toEqual({ x: -1, y: 0 })
+    const west = (await adapter.planContext('f_first', 'fl_west')).wall // A(100,100) -> B(100,500); room to the east
+    expect(west.normal).toEqual({ x: 1, y: 0 })
+  })
+
+  it('reports a slanted wall with a unit, room-facing normal', async () => {
+    const w = (await adapter.planContext('f_ground', 'gs_east')).wall
+    expect(Math.hypot(w.normal.x, w.normal.y)).toBeCloseTo(1, 9)
+    // The studio's centroid (425, 300) is on the positive side.
+    const mid = { x: (w.a.x + w.b.x) / 2, y: (w.a.y + w.b.y) / 2 }
+    expect((425 - mid.x) * w.normal.x + (300 - mid.y) * w.normal.y).toBeGreaterThan(0)
+  })
+
+  it('has no item before anything is saved, then the saved artwork in raw plan coordinates', async () => {
+    expect((await adapter.planContext('f_first', 'fl_south')).item).toBeNull()
+    const s = await adapter.loadWall('f_first', 'fl_south')
+    const saved = await adapter.apply('f_first', 'fl_south', { width: 60, height: 40, u: 300, v: 120 }, s.rev)
+    const plan = await adapter.planContext('f_first', 'fl_south', saved.artworkId)
+    // fl_south: A is at x = 700, so u = 300 is plan x = 400; flush on the room side (y = 500 - 7.5 - 1.5); facing north.
+    expect(plan.item).toMatchObject({ id: saved.artworkId, x: 400, y: 491, rotation: 180, width: 60, height: 40, depth: 3, elevation: 120 })
+    expect(plan.item!.color).toBe('#4b5a70')
+    expect((await adapter.planContext('f_first', 'fl_south')).item?.id).toBe(saved.artworkId) // also found by position
+  })
+
+  it('finds the saved artwork by id even when it has been dragged off the wall', async () => {
+    const s = await adapter.loadWall('f_first', 'fl_east')
+    const saved = await adapter.apply('f_first', 'fl_east', { width: 60, height: 40, u: 100, v: 100 }, s.rev)
+    mock.moveItem(saved.artworkId, { x: 300 })
+    expect((await adapter.planContext('f_first', 'fl_east')).item).toBeNull() // not on the wall: found only by id
+    expect((await adapter.planContext('f_first', 'fl_east', saved.artworkId)).item).toMatchObject({ id: saved.artworkId, x: 300 })
+  })
+
+  it('a deleted artwork or a missing wall is an error here too, never stale data', async () => {
+    const s = await adapter.loadWall('f_first', 'fl_east')
+    const saved = await adapter.apply('f_first', 'fl_east', { width: 60, height: 40, u: 100, v: 100 }, s.rev)
+    mock.deleteItem(saved.artworkId)
+    await expect(adapter.planContext('f_first', 'fl_east', saved.artworkId)).rejects.toMatchObject({ code: 'artwork_missing' })
+    mock.hideWall('fl_east')
+    await expect(adapter.planContext('f_first', 'fl_east')).rejects.toMatchObject({ code: 'wall_missing' })
+  })
+
+  it('never writes: only list_floors and list_entities reach FloorGen', async () => {
+    const s = await adapter.loadWall('f_first', 'fl_west')
+    const saved = await adapter.apply('f_first', 'fl_west', { width: 60, height: 40, u: 100, v: 100 }, s.rev)
+    rec.calls.length = 0
+    await adapter.planContext('f_first', 'fl_west', saved.artworkId)
+    expect(rec.writes()).toEqual([])
+    expect(rec.calls.every((c) => ['list_floors', 'list_entities'].includes(c.tool))).toBe(true)
+  })
+})

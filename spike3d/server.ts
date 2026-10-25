@@ -15,7 +15,7 @@ import { WallSnapAdapter } from '../server/adapter'
 import { arr, id, isRec, num, parseItem, parseRoom, parseWall, rec, str } from '../server/boundary'
 import { createGateway } from '../server/index'
 import { wallCoords, wallFrame } from '../src/geometry'
-import { describeFloors, readGlbJson } from './glbInfo'
+import { describeFloors, readGlbJson } from '../src/viewer3d/glbInfo'
 
 const GLB = process.env.SPIKE_GLB_PATH ?? join(homedir(), 'Downloads', 'townhouse-wallsnap-dev-3d.glb')
 const ORIGINS = ['http://localhost:5173', 'http://127.0.0.1:5173']

@@ -49,6 +49,8 @@ export function createApp(gw: Gateway, project: string) {
   app.get('/api/status', (_q, res) => res.json({ adapter: gw.kind, project, viewer3dUrl: gw.kind === 'floorgen' ? viewer3dUrl(project) : null }))
   app.get('/api/floors', wrap(() => adapter.listFloors()))
   app.get('/api/wall', wrap((q) => adapter.loadWall(String(q.query.floor), String(q.query.wall), typeof q.query.item === 'string' ? q.query.item : undefined)))
+  // Read-only plan geometry for the 3D preview (never writes).
+  app.get('/api/plan', wrap((q) => adapter.planContext(String(q.query.floor), String(q.query.wall), typeof q.query.item === 'string' ? q.query.item : undefined)))
   app.put('/api/artwork', wrap(async (q) => {
     const body: unknown = q.body
     if (!isRec(body) || typeof body.floorId !== 'string' || typeof body.wallId !== 'string') {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { facingRotation, planPoint, wallFrame } from '../src/geometry'
+import { facingRotation, planPoint, wallFrame } from '../geometry'
 import { clusterSolids } from './solids'
 import {
   boxError, expectedAabbCm, fitContain, floorBaseCm, frontDirection, placementFor, planToWorld, planeAxes, planeRotationY, type PlanItem,

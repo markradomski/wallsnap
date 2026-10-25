@@ -94,44 +94,44 @@ export type ImageStore = ReturnType<typeof createImageStore>
 
 // ---- IndexedDB implementation (browser) ----
 
-const DB_NAME = 'wallsnap-images'
-const STORE = 'images'
+/** A key-value store over one IndexedDB object store. Each store lives in its own database so they never clash on versions. */
+export function makeIdbKV(dbName: string, storeName: string): KV {
+  const open = (): Promise<IDBDatabase> =>
+    new Promise((resolve, reject) => {
+      if (typeof indexedDB === 'undefined') return reject(new Error('IndexedDB is unavailable'))
+      const req = indexedDB.open(dbName, 1)
+      req.onupgradeneeded = () => req.result.createObjectStore(storeName)
+      req.onsuccess = () => resolve(req.result)
+      req.onerror = () => reject(req.error ?? new Error('IndexedDB open failed'))
+      req.onblocked = () => reject(new Error('IndexedDB blocked'))
+    })
 
-function open(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    if (typeof indexedDB === 'undefined') return reject(new Error('IndexedDB is unavailable'))
-    const req = indexedDB.open(DB_NAME, 1)
-    req.onupgradeneeded = () => req.result.createObjectStore(STORE)
-    req.onsuccess = () => resolve(req.result)
-    req.onerror = () => reject(req.error ?? new Error('IndexedDB open failed'))
-    req.onblocked = () => reject(new Error('IndexedDB blocked'))
-  })
+  const run = <T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> =>
+    open().then(
+      (db) =>
+        new Promise<T>((resolve, reject) => {
+          const tx = db.transaction(storeName, mode)
+          const req = fn(tx.objectStore(storeName))
+          tx.oncomplete = () => {
+            db.close()
+            resolve(req.result)
+          }
+          tx.onerror = () => {
+            db.close()
+            reject(tx.error ?? new Error('IndexedDB transaction failed'))
+          }
+          tx.onabort = () => {
+            db.close()
+            reject(tx.error ?? new Error('IndexedDB transaction aborted'))
+          }
+        }),
+    )
+
+  return {
+    get: (key) => run('readonly', (s) => s.get(key)),
+    put: (key, value) => run('readwrite', (s) => s.put(value, key)).then(() => undefined),
+    del: (key) => run('readwrite', (s) => s.delete(key)).then(() => undefined),
+  }
 }
 
-function run<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> {
-  return open().then(
-    (db) =>
-      new Promise<T>((resolve, reject) => {
-        const tx = db.transaction(STORE, mode)
-        const req = fn(tx.objectStore(STORE))
-        tx.oncomplete = () => {
-          db.close()
-          resolve(req.result)
-        }
-        tx.onerror = () => {
-          db.close()
-          reject(tx.error ?? new Error('IndexedDB transaction failed'))
-        }
-        tx.onabort = () => {
-          db.close()
-          reject(tx.error ?? new Error('IndexedDB transaction aborted'))
-        }
-      }),
-  )
-}
-
-export const idbKV: KV = {
-  get: (key) => run('readonly', (s) => s.get(key)),
-  put: (key, value) => run('readwrite', (s) => s.put(value, key)).then(() => undefined),
-  del: (key) => run('readwrite', (s) => s.delete(key)).then(() => undefined),
-}
+export const idbKV: KV = makeIdbKV('wallsnap-images', 'images')

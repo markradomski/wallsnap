@@ -74,6 +74,16 @@ Re-reads the project; rejects with 409 if its `rev` differs from the loaded one 
 
 Height <= 200 cm; inside wall bounds; no overlap with doors or windows; ground-floor walls >= 650 cm are treated as the reserved studio wall and disabled.
 
+## 3D preview of the artwork
+
+The **2D / 3D** switch in the toolbar shows your artwork, with its actual image, hanging in the furnished townhouse. 2D stays the only place you edit; 3D is a read-only view of your current local state, so unsaved edits show immediately and nothing is sent to FloorGen by entering 3D, orbiting, or switching back and forth. The badge says whether you are previewing unsaved changes or the saved placement.
+
+- **Model**: FloorGen's 3D export is a snapshot. Import it with *Import 3D model…* (a local `.glb`, up to 100 MB); it is validated (must parse as glTF, contain a floor group with walls, and be a plausible building in metres) and kept in this browser's IndexedDB with its filename and import date, so it survives reloads. *Replace 3D model…* swaps it atomically and releases the old one; artwork images, item ids, local edits and the selected wall are untouched. After changing walls, floors, windows, stairs or furniture in FloorGen, export again and replace. There is no automatic export or file watching. GLB files are never committed (`*.glb` is git-ignored).
+- **Placement**: computed from the same wall endpoints, thickness and storey heights the server reads (`GET /api/plan`, read-only), so it matches what Apply will save for N/S/E/W and slanted walls.
+- **Generic stand-in**: FloorGen shows the saved item as a plain block. When the model contains it, it is matched by geometry (exact, or a single stale one on the same wall) and hidden so it does not collide with the image; if matching is ambiguous nothing is hidden and a note says so.
+- **Floors**: by default upper floors are hidden so the selected floor is visible; *Show upper floors* restores the whole building. This never changes placement.
+- Three.js is loaded only when you enter 3D. Without WebGL, 3D shows an explanation and 2D keeps working.
+
 ## Known limitations
 
 - Images live in one browser profile: they are not shared between browsers or devices, are lost if site data is cleared, and a draft image for a wall that is never saved stays in that browser's storage.
@@ -84,6 +94,7 @@ Height <= 200 cm; inside wall bounds; no overlap with doors or windows; ground-f
 - Live-verified (2026-10-25, dev copy only): authenticated MCP connection; read of real walls; `place_on_wall` + `update_items` create (south wall, rotation 180) and update (north wall) with read-back, cross-checked through a separate FloorGen connection and the 2D render. **Not verified:** FloorGen's 3D view, walls with openings, diagonal real walls, and the stale-revision path against the real server. Unit and e2e tests use the mock gateway and synthetic geometry.
 - Apply uses `place_on_wall` (FloorGen sets flush contact and facing) and `update_items` for size. `place_on_wall` validates the item's *current* size, so Apply resizes first and moves last: an existing item is resized (`update_items`) then moved (`place_on_wall`); a new 100×70 catalogue picture is first hung where it fits, then resized, then moved to the exact `u`/`v` (up to three writes). FloorGen's error `code`, `message` and `hint` are shown in the UI.
 - The reserved-wall rule is a length heuristic. Lighting obstructions are not checked. One artwork per wall; walls bounding no room are not offered; for walls shared by two rooms the first room's face is used.
+- 3D: the imported model is a snapshot and is only as current as its export; the preview is a faithful placement preview, not FloorGen's own renderer (FloorGen itself still shows a plain block for the item). Matching the stand-in relies on FloorGen's generic artwork colour. Verified with the real townhouse export in a browser; no 3D dragging, multi-artwork or automatic export.
 - Whether the item's width/height are the visible picture face (versus including its frame) is unconfirmed.
 
 ## Layout

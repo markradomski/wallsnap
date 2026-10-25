@@ -46,6 +46,10 @@
   --label-bg: #ffffff;
   --disabled-bg: #e3e6ec;
   --disabled-text: #7b8497;
+  /* Backdrop behind the 3D preview */
+  --sky-a: #ebeae6;
+  --sky-b: #dcdfe1;
+  --sky-c: #b6c7da;
 }
 
 :root[data-theme='dark'] {
@@ -84,6 +88,9 @@
   --label-bg: #171d2a;
   --disabled-bg: #2a3142;
   --disabled-text: #7d879c;
+  --sky-a: #3a4256;
+  --sky-b: #2a3144;
+  --sky-c: #1a2030;
 }
 
 *, *::before, *::after { box-sizing: border-box; }

@@ -1,5 +1,5 @@
 import { flushPerp, offWallReasons, validate, wallCoords, wallFrame, type WallFrame } from '../src/geometry'
-import type { ApplyResult, Artwork, FloorSummary, Opening, WallState } from '../src/types'
+import type { ApplyResult, Artwork, FloorSummary, Opening, PlanContext, WallState } from '../src/types'
 import {
   BoundaryError, arr, id, isRec, parseFloor, parseItem, parseOpening, parseRoom, parseWall, rec,
   type FloorRow, type ItemRow, type OpeningRow, type RoomRow, type WallRow,
@@ -143,7 +143,25 @@ export class WallSnapAdapter {
       })
     }
     const offWall = item ? offWallReasons(frame, wall.thickness, item) : []
-    return { revs: [fl.rev, e.rev, itemRev], wall, room, frame, openings, item, offWall }
+    return { revs: [fl.rev, e.rev, itemRev], wall, room, frame, openings, item, offWall, floors: fl.floors }
+  }
+
+  /**
+   * Plan-space geometry for the 3D preview: floors and heights, this wall's endpoints, thickness and room-facing normal, and
+   * the saved artwork's raw plan coordinates. Read-only, and from one consistent snapshot like every other read.
+   */
+  async planContext(floorId: string, wallId: string, itemId?: string): Promise<PlanContext> {
+    const r = await this.read(floorId, wallId, itemId)
+    const at = r.floors.findIndex((f) => f.id === floorId)
+    const it = r.item
+    return {
+      rev: r.rev,
+      floors: r.floors.map((f) => ({ id: f.id, name: f.name, height: f.height })),
+      floorId,
+      baseCm: r.floors.slice(0, at).reduce((sum, f) => sum + f.height, 0),
+      wall: { id: wallId, a: r.wall.a, b: r.wall.b, length: r.frame.length, height: r.wall.height, thickness: r.wall.thickness, normal: r.frame.normal },
+      item: it ? { id: it.id, x: it.x, y: it.y, rotation: it.rotation, width: it.width, height: it.height, depth: it.depth, elevation: it.elevation, color: it.color ?? '#4b5a70' } : null,
+    }
   }
 
   private toArtwork(frame: WallFrame, item: ItemRow): Artwork {

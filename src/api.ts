@@ -1,4 +1,4 @@
-import type { ApplyResult, Artwork, FloorSummary, WallState } from './types'
+import type { ApplyResult, Artwork, FloorSummary, PlanContext, WallState } from './types'
 
 export class ApiError extends Error {
   constructor(message: string, readonly status: number, readonly code?: string) {
@@ -24,3 +24,7 @@ export const putArtwork = (floorId: string, wallId: string, artwork: Artwork, re
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ floorId, wallId, artwork, rev, itemId }),
   })
+
+/** Plan-space geometry for the 3D preview. Read-only. */
+export const getPlan = (floor: string, wall: string, itemId?: string | null) =>
+  req<PlanContext>(`/api/plan?floor=${encodeURIComponent(floor)}&wall=${encodeURIComponent(wall)}${itemId ? `&item=${encodeURIComponent(itemId)}` : ''}`)

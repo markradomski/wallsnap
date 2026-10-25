@@ -64,3 +64,25 @@ export interface ApplyResult {
   rev: number
   created: boolean
 }
+
+/** Plan-space data for the 3D preview (read-only; FloorGen plan units, centimetres). */
+export interface PlanContext {
+  rev: number
+  /** All storeys, lowest first, with heights. */
+  floors: { id: string; name: string; height: number }[]
+  floorId: string
+  /** Height of the selected floor's base: the summed heights of the floors below it. */
+  baseCm: number
+  wall: {
+    id: string
+    a: { x: number; y: number }
+    b: { x: number; y: number }
+    length: number
+    height: number
+    thickness: number
+    /** Unit plan vector from the wall towards the room the artwork hangs in. */
+    normal: { x: number; y: number }
+  }
+  /** The saved FloorGen artwork on this wall (raw plan coordinates), or null. */
+  item: { id: string; x: number; y: number; rotation: number; width: number; height: number; depth: number; elevation: number; color: string } | null
+}

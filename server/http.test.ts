@@ -172,3 +172,25 @@ describe('artwork images stay out of the server and FloorGen', () => {
     expect(sent).not.toMatch(/data:image|base64|texture|image/i)
   })
 })
+
+describe('GET /api/plan', () => {
+  it('returns plan geometry and is read-only', async () => {
+    const mock = new MockGateway()
+    const writes: string[] = []
+    const gw: Gateway = { kind: 'mock', call: (t, a) => (['place_on_wall', 'update_items', 'place_item'].includes(t) && writes.push(t), mock.call(t, a)) }
+    const base = await serve(gw)
+    const res = await fetch(`${base}/api/plan?floor=f_first&wall=fl_north`)
+    const body = await res.json()
+    expect(res.status).toBe(200)
+    expect(body).toMatchObject({ floorId: 'f_first', baseCm: 250, item: null })
+    expect(body.wall).toMatchObject({ id: 'fl_north', length: 600, thickness: 15, normal: { x: 0, y: 1 } })
+    expect(writes).toEqual([])
+  })
+  it('404s with the same codes as /api/wall for a missing artwork or wall', async () => {
+    const base = await serve(new MockGateway())
+    const a = await fetch(`${base}/api/plan?floor=f_first&wall=fl_north&item=i_nope`)
+    expect([a.status, (await a.json()).code]).toEqual([404, 'artwork_missing'])
+    const w = await fetch(`${base}/api/plan?floor=f_first&wall=w_nope`)
+    expect([w.status, (await w.json()).code]).toEqual([404, 'wall_missing'])
+  })
+})

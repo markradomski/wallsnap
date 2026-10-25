@@ -1,0 +1,24 @@
+.panel { display: flex; flex-direction: column; flex: 1; min-height: 0; gap: 6px; }
+.bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; min-height: 28px; font-size: 12px; }
+.spacer { flex: 1; }
+.badge { padding: 3px 10px; font-weight: 650; border-radius: 999px; background: var(--ok-soft); color: var(--ok); border: 1px solid var(--ok); }
+.badge[data-unsaved='true'] { background: var(--unsaved-soft); color: var(--unsaved); border-color: var(--unsaved); }
+.check { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; color: var(--text); }
+.check input { accent-color: var(--accent); }
+.check:has(input:disabled) { cursor: not-allowed; color: var(--text-muted); }
+.modelInfo { color: var(--text-muted); max-width: 46ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.import { display: inline-flex; padding: 4px 10px; font-weight: 600; color: var(--text); border: 1px solid var(--border-strong); border-radius: 5px; cursor: pointer; }
+.import:hover { background: var(--accent-soft); border-color: var(--accent); }
+.import:focus-within { outline: 2px solid var(--focus); outline-offset: 2px; }
+.import[aria-disabled='true'] { cursor: progress; color: var(--text-muted); }
+.error { margin: 0; padding: 6px 10px; font-size: 12px; line-height: 1.4; color: var(--text); background: var(--danger-soft); border: 1px solid var(--danger); border-radius: 4px; }
+.snapshot, .note { margin: 0; font-size: 12px; line-height: 1.4; color: var(--text-muted); }
+.note { padding: 5px 10px; color: var(--text); background: var(--unsaved-soft); border: 1px solid var(--unsaved); border-radius: 4px; }
+/* A soft daylight backdrop behind the transparent canvas (darker in the dark theme). */
+.stage { position: relative; flex: 1; min-height: 340px; overflow: hidden; border: 1px solid var(--border); border-radius: 6px; background: radial-gradient(ellipse at 50% 62%, var(--sky-a) 0%, var(--sky-b) 52%, var(--sky-c) 100%); }
+.host { position: absolute; inset: 0; }
+.host canvas { display: block; touch-action: none; }
+.overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 24px; text-align: center; font-size: 13px; line-height: 1.45; color: var(--text); background: color-mix(in srgb, var(--bg) 78%, transparent); }
+.overlay span { max-width: 52ch; color: var(--text-muted); }
+.srOnly { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+@media (max-width: 900px) { .stage { min-height: 360px; height: 62vh; flex: none; } }

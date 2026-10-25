@@ -4,6 +4,7 @@
  * up in its scene, so a floor that was dropped, hidden, shifted or rescaled cannot go unnoticed.
  */
 export interface GltfJson {
+  asset?: { generator?: string }
   scene?: number
   scenes: { nodes: number[] }[]
   nodes: { name?: string; mesh?: number; children?: number[] }[]
