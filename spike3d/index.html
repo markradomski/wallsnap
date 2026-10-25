@@ -5,7 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>WallSnap 3D spike</title>
     <style>
-      html, body { margin: 0; height: 100%; background: #0d1118; color: #e6e9f2; font: 13px system-ui, sans-serif; overflow: hidden; }
+      /* A soft daylight backdrop (the canvas is transparent), in the spirit of FloorGen's own viewer. */
+      html, body { margin: 0; height: 100%; background: radial-gradient(ellipse at 50% 62%, #ebeae6 0%, #dcdfe1 52%, #b6c7da 100%); color: #e6e9f2; font: 13px system-ui, sans-serif; overflow: hidden; }
       #view { position: fixed; inset: 0; }
       canvas { display: block; }
       #hud { position: fixed; left: 12px; bottom: 12px; max-width: min(560px, calc(100% - 24px)); padding: 8px 10px; border-radius: 6px; background: rgba(13, 17, 24, 0.82); border: 1px solid #323b50; line-height: 1.5; white-space: pre-wrap; }

@@ -7,15 +7,19 @@
  */
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { createImageStore, idbKV, itemKey } from '../src/imageStore'
 import { floorKey, type FloorInfo, type FloorKey } from './glbInfo'
+import { categoryOf, colourOfMaterialName, finishFor, orbitPosition, shadowBounds } from './look'
 import { clusterSolids } from './solids'
 import { CM, boxError, expectedAabbCm, fitContain, placementFor, type Aabb, type PlanItem } from './transform'
 
 const API = 'http://localhost:8788'
 const hud = document.getElementById('hud')!
+const hideHud = new URLSearchParams(location.search).get('hud') === '0' // for clean screenshots; errors always show
 const say = (text: string, error = false) => {
+  hud.style.display = hideHud && !error ? 'none' : ''
   hud.textContent = text
   hud.classList.toggle('error', error)
 }
@@ -75,16 +79,23 @@ function orientationCheck(
 
 async function main() {
   const view = document.getElementById('view')!
-  const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true })
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true })
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+  renderer.setClearColor(0x000000, 0) // transparent: the page's CSS sky gradient is the backdrop
+  // Khronos PBR Neutral tone mapping keeps authored base colours close to what FloorGen exported while rolling off highlights.
+  renderer.toneMapping = THREE.NeutralToneMapping
+  renderer.toneMappingExposure = 1
+  renderer.shadowMap.enabled = true
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap
   view.appendChild(renderer.domElement)
   const scene = new THREE.Scene()
-  scene.background = new THREE.Color(0x0d1118)
-  // Just enough light to read the PBR materials; the artwork itself is unlit so its colours stay true.
-  const sun = new THREE.DirectionalLight(0xffffff, 1.6)
-  sun.position.set(3, 10, 12)
-  scene.add(new THREE.HemisphereLight(0xffffff, 0x667788, 1.4), sun)
-  const camera = new THREE.PerspectiveCamera(50, 1, 0.05, 100)
+  // Soft, neutral ambient fill from a built-in studio environment, a little sky/ground tint, and (added once the building's
+  // size is known) one warm daylight source. The artwork itself is unlit and not tone mapped, so its colours stay true.
+  scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture
+  scene.environmentIntensity = 0.45
+  scene.add(new THREE.HemisphereLight(0xdbe7ff, 0x8d8576, 0.3))
+  const sun = new THREE.DirectionalLight(0xfff1de, 2.3)
+  const camera = new THREE.PerspectiveCamera(40, 1, 0.05, 100)
   const controls = new OrbitControls(camera, renderer.domElement)
   const resize = () => {
     renderer.setSize(window.innerWidth, window.innerHeight)
@@ -116,6 +127,57 @@ async function main() {
   if (!first) throw new Error('The model has no first-floor group.')
   // What the file itself declares per floor, to compare with what ends up in the scene.
   const declared = ((await (await fetch(`${API}/model-info`)).json()) as { floors: FloorInfo[] }).floors
+
+  // Presentation, not geometry: per-category finish on CLONED materials (colours are never touched), shadows, sun, ground.
+  const categoryFor = (o: THREE.Object3D) => {
+    for (let n: THREE.Object3D | null = o; n; n = n.parent) {
+      const c = categoryOf(n.name)
+      if (c) return c
+    }
+    return null
+  }
+  const names = new Set<string>()
+  let colourMismatches = 0
+  const byCategory: Record<string, number> = {}
+  gltf.scene.traverse((o) => {
+    const m = o as THREE.Mesh
+    if (!m.isMesh) return
+    const src = m.material as THREE.MeshStandardMaterial
+    names.add(src.name)
+    const named = colourOfMaterialName(src.name)
+    if (named && `#${src.color.getHexString()}` !== named) colourMismatches++ // GLTFLoader must keep the exported colour
+    const cat = categoryFor(m)
+    byCategory[cat ?? 'other'] = (byCategory[cat ?? 'other'] ?? 0) + 1
+    const finish = finishFor(cat)
+    const mat = src.clone() // shared materials differ by category, so never edit them in place
+    mat.roughness = finish.roughness
+    mat.metalness = finish.metalness
+    m.material = mat
+    m.castShadow = finish.castShadow
+    m.receiveShadow = finish.receiveShadow
+  })
+  const building = new THREE.Box3().setFromObject(gltf.scene)
+  const buildingCentre = building.getCenter(new THREE.Vector3())
+  // Daylight from the room's open side and a little west, high: it lights the painting wall and rakes shadows across the floor.
+  const faceN = new THREE.Vector3(art.wall.normal.x, 0, art.wall.normal.y)
+  sun.position.set(...orbitPosition([buildingCentre.x, buildingCentre.y, buildingCentre.z], { x: faceN.x, z: faceN.z }, -32, 52, 30))
+  sun.target.position.copy(buildingCentre)
+  const sb = shadowBounds(building.min.toArray(), building.max.toArray(), sun.position.toArray(), buildingCentre.toArray(), 0.4)
+  Object.assign(sun.shadow.camera, sb)
+  sun.shadow.camera.updateProjectionMatrix()
+  sun.shadow.mapSize.set(4096, 4096)
+  sun.shadow.bias = -0.0004
+  sun.shadow.normalBias = 0.03
+  sun.shadow.radius = 4
+  sun.castShadow = true
+  scene.add(sun, sun.target)
+  // A shadow-only ground just under the building so it sits on something. A presentation aid: it is not architecture.
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(60, 60), new THREE.ShadowMaterial({ opacity: 0.22 }))
+  ground.rotation.x = -Math.PI / 2
+  ground.position.set(buildingCentre.x, building.min.y - 0.004, buildingCentre.z)
+  ground.receiveShadow = true
+  ground.name = 'ground-shadow'
+  scene.add(ground)
 
   // The second floor is HIDDEN by default, on purpose: it is a solid slab directly above the first-floor room, so from the
   // overview camera it would cover the room the artwork hangs in. One checkbox (or ?floors=all) shows all three storeys.
@@ -184,16 +246,19 @@ async function main() {
   const inFootprint = best_ ? plane.position.y / CM >= best_.min[1] - 1e-6 && plane.position.y / CM <= best_.max[1] + 1e-6 : false
   const orient = orientationCheck(renderer, scene, plane, nVec, { w: fit.width * CM, h: fit.height * CM }, img)
 
-  // 6. A useful view, derived from the wall itself: stand back and well above the middle of the wall, over the near
-  //    wall, looking down into the room at the picture's wall. Distances scale with the wall's length.
+  // 6. A useful view, derived from the painting's wall: aim at the middle of the room's artwork wall at furniture height
+  //    (between the painting and the wall's centre, so painting and sofa are both in frame), and stand back, to one side
+  //    and well above, over the near wall. Distance scales with the wall's length.
   const L = art.wall.length * CM
   const mid = new THREE.Vector3(((art.wall.a.x + art.wall.b.x) / 2) * CM, 0, ((art.wall.a.y + art.wall.b.y) / 2) * CM)
-  const n = new THREE.Vector3(art.wall.normal.x, 0, art.wall.normal.y) // plan normal == world (X, Z)
+  const n = faceN
   const floorY = floor.baseCm * CM
-  controls.target.copy(mid).addScaledVector(n, 0.3 * L).setY(floorY + 0.7)
-  camera.position.copy(mid).addScaledVector(n, 1.2 * L).setY(floorY + 0.8 * L)
+  const paintingCentre = new THREE.Vector3(...placement.position)
+  const aim = new THREE.Vector3((paintingCentre.x + mid.x) / 2, floorY + 0.95, 0).addScaledVector(n, 0).setZ(mid.z).addScaledVector(n, 0.28 * L)
+  controls.target.copy(aim)
+  camera.position.set(...orbitPosition([aim.x, aim.y, aim.z], { x: n.x, z: n.z }, 22, 46, 1.55 * L))
   controls.update()
-  const centre = new THREE.Vector3(...placement.position)
+  const centre = paintingCentre.clone()
 
   // 7. Is every floor really in the scene, unaltered, and could the camera see it? (Read after the camera is placed.)
   gltf.scene.updateMatrixWorld(true)
@@ -262,6 +327,10 @@ async function main() {
     centre: centre.toArray(),
     renderer: { clippingPlanes: renderer.clippingPlanes.length, localClipping: renderer.localClippingEnabled },
     cameraClip: { near: camera.near, far: camera.far, fov: camera.fov },
+    look: {
+      toneMapping: 'NeutralToneMapping', shadows: renderer.shadowMap.enabled, shadowMapSize: sun.shadow.mapSize.x,
+      distinctMaterials: names.size, exportedColourMismatches: colourMismatches, meshesByCategory: byCategory,
+    },
   }
   ;(window as unknown as { __spike: unknown }).__spike = summary
   Object.assign(window, { __scene: scene, __camera: camera, __controls: controls })

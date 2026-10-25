@@ -98,6 +98,52 @@ Note: the model was re-exported on 26 Oct, after the artwork was moved in FloorG
 match against the generic solid still holds against the new file, and the geometry of the three floors is otherwise unchanged. The
 numbers in the verification table above are from the first export.
 
+## Visual quality pass
+
+![Native FloorGen vs before and after](results/comparison.jpg)
+
+*Top row: FloorGen's own 3D viewer (reference), the spike before, the spike after, the last two at the same camera pose. Bottom row: before and after at their default framing, and the second floor shown. `?hud=0` hides the text readout for clean captures.*
+
+### What the GLB actually contains
+
+| Question | Finding | Missing from the file, or just not rendered well? |
+| --- | --- | --- |
+| Materials and surface properties | 21 materials, **colour only**. All share one property set: metallic 0, roughness 0.9, opaque, double-sided. The hex colour is in each name. | Missing: FloorGen exports no per-surface roughness, metalness or finish. |
+| Textures | **None.** No textures, no images, and the vertices carry only `POSITION` and `NORMAL`: **no UV coordinates**. | Missing, and not recoverable: even a texture could not be mapped. The native render's brick walls cannot be reproduced. |
+| Furniture | Plain blocks: first-floor furniture is 160 triangles in 15 solids (open-bottom boxes), all flat-shaded. | Missing detail. Lighting helps readability, not realism: the native sofa, bookcase and table are far more detailed. |
+| Window glass and frames | **None.** Windows are bare holes in a single-material wall mesh (0 vertices inside the window volume), no transparent materials, no meshes named glass, window, door or frame. | Missing: glazing cannot be drawn, and faking it would be invented geometry. |
+| Does GLTFLoader keep the material assignments? | Yes: all 21 materials load, with **0 colour mismatches** against the hex in their names. | Preserved. |
+| Lighting in the file | None (`KHR_lights_punctual` absent). | The previous viewer simply did not light it well (one flat hemisphere + sun, no shadows, dark void). That part was ours to fix. |
+
+### What changed in the viewer (one pass)
+
+* **Tone mapping:** Khronos PBR Neutral, which keeps authored base colours close to the exported values; sRGB output.
+* **Lighting:** a soft neutral studio environment (`RoomEnvironment`, built into Three.js) at low intensity, a faint sky/ground hemisphere, and one warm directional "daylight" from the room's open side, a little west and high.
+* **Shadows:** soft (PCF) 4096 shadow map. Its frustum is fitted to the building by `shadowBounds`, which a test checks against a real Three.js light camera. A shadow-only ground plane just under the building lets it sit on something (a presentation aid, not architecture).
+* **Finishes:** by category from the node names (walls, floors, furniture, stairs): small roughness differences (furniture a touch of sheen), shadows cast/received accordingly, nothing metallic. Applied to **clones** of the materials, so no exported colour is ever modified.
+* **Backdrop:** a transparent canvas over a soft daylight gradient instead of a flat dark void.
+* **Camera:** the initial framing is derived from the painting's wall (aim at furniture height between the painting and the wall's centre, 22° to one side, 46° up, 1.55 wall-lengths back, 40° field of view), so the painting, the sofa and the bookcase are all in frame. Orbit, zoom and the **Show second floor** toggle are unchanged.
+* **Artwork untouched:** the plane is still the unlit, un-tone-mapped `MeshBasicMaterial`, so its image colours are exactly the source's. Re-verified after the changes: solid match 0.3 mm, 1.7 mm in front, orientation as-is 4.5 vs mirrored 15.3, size 1.912 × 1.195 m, floors in file == scene.
+
+Considered and deliberately not done: **ambient occlusion** (needs a post-processing composer; the soft shadows and flat boxes already separate surfaces, so it is not justified), **edge outlines**, **ghosting the ground floor** like the native viewer (it would make opaque surfaces transparent just to expose the interior), and any invented wood, brick or fabric textures.
+
+### Assessment against FloorGen's native view
+
+| | Native FloorGen | Spike3D now | Limit |
+| --- | --- | --- | --- |
+| Architectural readability | Good | Good: walls, floors, stairs and openings read clearly, with soft shadows | none for geometry |
+| Furniture readability | Detailed models | Readable as coloured blocks in context; the painting's scale against the sofa is easy to judge | GLB has boxes only |
+| Wall and floor differentiation | Textured walls, carpet | Distinct by colour and shading | no textures or UVs in the GLB |
+| Windows | Glazed with frames | Bare openings | no glass or frame geometry in the GLB |
+| Lighting and shadows | Soft sky light, ground shadow | Comparable in spirit: soft daylight, ground shadow | n/a |
+| Artwork | A dark framed placeholder | The real image at its true size, position and colour | n/a |
+
+**Recommendation: good enough to integrate** for its purpose, judging the actual painting's size, colour and placement in the furnished room.
+It is not a substitute for FloorGen's own render: textures, glazing and detailed furniture simply are not in the export, and
+should not be faked. Two cautions for integration: the GLB must be re-exported by hand after each change (no MCP export yet), and some
+colours differ between this file and the native screenshot (for example the sofa is teal in the GLB, blue in the earlier native
+capture, which was taken at a different time); I did not investigate which is current.
+
 ## Limitations that would affect integration
 
 1. **The model is a manual, stale snapshot.** `get_context` lists `export_glb` as "coming soon", so there is no MCP call to export
