@@ -12,5 +12,5 @@
     "allowImportingTsExtensions": true,
     "types": ["vite/client", "node"]
   },
-  "include": ["src", "server", "e2e", "*.ts"]
+  "include": ["src", "server", "e2e", "spike3d", "*.ts"]
 }

@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WallSnap 3D spike</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #0d1118; color: #e6e9f2; font: 13px system-ui, sans-serif; overflow: hidden; }
+      #view { position: fixed; inset: 0; }
+      canvas { display: block; }
+      #hud { position: fixed; left: 12px; bottom: 12px; max-width: min(560px, calc(100% - 24px)); padding: 8px 10px; border-radius: 6px; background: rgba(13, 17, 24, 0.82); border: 1px solid #323b50; line-height: 1.5; white-space: pre-wrap; }
+      #hud.error { border-color: #ff8a80; color: #ffb4ad; }
+    </style>
+  </head>
+  <body>
+    <div id="view"></div>
+    <div id="hud" role="status">Starting…</div>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>
