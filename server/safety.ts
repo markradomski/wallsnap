@@ -30,3 +30,8 @@ export function guardWrites(inner: Gateway, writable: string): Gateway {
     },
   }
 }
+
+/** FloorGen 3D viewer link for a project, or null unless it is the writable development project. */
+export function viewer3dUrl(project: string): string | null {
+  return project === WRITABLE_PROJECT ? `https://floorgen.app/projects#/p/${project}/3d` : null
+}

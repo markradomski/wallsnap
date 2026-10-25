@@ -4,7 +4,7 @@ import { StaleError, ValidationError, WallSnapAdapter } from './adapter'
 import { BoundaryError, isRec, num, rev } from './boundary'
 import { FloorGenGateway, GatewayError, type Gateway } from './gateway'
 import { MockGateway } from './mock'
-import { ORIGINAL_PROJECT, SafetyError, WRITABLE_PROJECT, guardWrites } from './safety'
+import { ORIGINAL_PROJECT, SafetyError, WRITABLE_PROJECT, guardWrites, viewer3dUrl } from './safety'
 
 /** Startup safeguard (in addition to the per-write guard): only the development copy may be configured. */
 export function createGateway(env: Record<string, string | undefined> = process.env): { gw: Gateway; project: string } {
@@ -44,7 +44,7 @@ export function createApp(gw: Gateway, project: string) {
       },
     )
 
-  app.get('/api/status', (_q, res) => res.json({ adapter: gw.kind, project }))
+  app.get('/api/status', (_q, res) => res.json({ adapter: gw.kind, project, viewer3dUrl: gw.kind === 'floorgen' ? viewer3dUrl(project) : null }))
   app.get('/api/floors', wrap(() => adapter.listFloors()))
   app.get('/api/wall', wrap((q) => adapter.loadWall(String(q.query.floor), String(q.query.wall))))
   app.put('/api/artwork', wrap(async (q) => {

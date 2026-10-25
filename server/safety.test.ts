@@ -3,7 +3,7 @@ import { WallSnapAdapter } from './adapter'
 import { Recorder } from './helpers.test-util'
 import { createGateway } from './index'
 import { MockGateway } from './mock'
-import { ORIGINAL_PROJECT, SafetyError, WRITABLE_PROJECT, guardWrites } from './safety'
+import { ORIGINAL_PROJECT, SafetyError, WRITABLE_PROJECT, guardWrites, viewer3dUrl } from './safety'
 
 const setup = (writable: string) => {
   const transport = new Recorder(new MockGateway())
@@ -68,5 +68,14 @@ describe('startup safeguard', () => {
   })
   it('accepts the dev copy with a key, without connecting', () => {
     expect(createGateway({ ...key, FLOORGEN_PROJECT_ID: WRITABLE_PROJECT }).project).toBe(WRITABLE_PROJECT)
+  })
+})
+
+describe('3D viewer link', () => {
+  it('is built from the configured project, for the dev copy only', () => {
+    expect(viewer3dUrl(WRITABLE_PROJECT)).toBe('https://floorgen.app/projects#/p/p_1ii0qmfr58hv4/3d')
+    expect(viewer3dUrl(ORIGINAL_PROJECT)).toBeNull()
+    expect(viewer3dUrl('p_other')).toBeNull()
+    expect(viewer3dUrl('mock-project')).toBeNull()
   })
 })

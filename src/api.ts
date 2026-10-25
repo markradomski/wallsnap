@@ -13,7 +13,7 @@ async function req<T>(url: string, init?: RequestInit): Promise<T> {
   return body as T
 }
 
-export const getStatus = () => req<{ adapter: 'floorgen' | 'mock'; project: string }>('/api/status')
+export const getStatus = () => req<{ adapter: 'floorgen' | 'mock'; project: string; viewer3dUrl: string | null }>('/api/status')
 export const getFloors = () => req<FloorSummary[]>('/api/floors')
 export const getWall = (floor: string, wall: string) =>
   req<WallState>(`/api/wall?floor=${encodeURIComponent(floor)}&wall=${encodeURIComponent(wall)}`)
