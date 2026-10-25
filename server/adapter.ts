@@ -16,6 +16,7 @@ export class ValidationError extends Error {
 const TAG = 'wallsnap'
 const CATALOG_ID = 'picture-large' // 100x3x70 cm catalogue picture, resized to the requested size
 const CATALOG_WIDTH = 100
+const CATALOG_HEIGHT = 70
 /** Heuristic for the reserved studio wall: ground-floor walls at least this long are not offered. */
 const RESERVED_MIN_LENGTH = 650
 /** Tolerances for read-back verification (cm). */
@@ -124,20 +125,24 @@ export class WallSnapAdapter {
 
     const base = { project: this.project, floor: floorId }
     const hang = { wall_id: wallId, face_room: r.room.key }
-    // FloorGen's own wall placement sets flush contact and facing; the catalogue picture is 100 cm wide
-    // until resized, so hang it where it fits first, resize, then move to the exact u if that differs.
-    const firstU = r.item ? art.u : Math.min(Math.max(art.u, CATALOG_WIDTH / 2), r.frame.length - CATALOG_WIDTH / 2)
+    // place_on_wall validates the item's CURRENT size against the wall, so the size must be right before the
+    // final move: (1) a new catalogue picture (100x70) is hung at a pose where it fits, (2) resize,
+    // (3) move to the exact u/v. An existing item is simply resized, then moved.
     let rev = r.rev
     let created = false
     let itemId: string
+    let at = { offset: art.u, elevation: art.v }
 
     if (r.item) {
       itemId = r.item.id
-      rev = (await this.gw.call('place_on_wall', { ...base, ...hang, item_id: itemId, offset: firstU, elevation: art.v, expected_rev: rev })).rev
     } else {
       created = true
+      at = {
+        offset: Math.min(Math.max(art.u, CATALOG_WIDTH / 2), r.frame.length - CATALOG_WIDTH / 2),
+        elevation: Math.min(art.v, Math.max(0, r.wall.height - CATALOG_HEIGHT)),
+      }
       const placed = await this.gw.call('place_on_wall', {
-        ...base, ...hang, catalog_id: CATALOG_ID, offset: firstU, elevation: art.v, name: 'WallSnap artwork', expected_rev: rev,
+        ...base, ...hang, catalog_id: CATALOG_ID, ...at, name: 'WallSnap artwork', expected_rev: rev,
       })
       itemId = id(rec(placed.data, 'place_on_wall data').item_id, 'item_id')
       rev = placed.rev
@@ -145,7 +150,7 @@ export class WallSnapAdapter {
     rev = (await this.gw.call('update_items', {
       ...base, id: itemId, width: art.width, height: art.height, tag: TAG, expected_rev: rev,
     })).rev
-    if (Math.abs(firstU - art.u) > 1e-9) {
+    if (!created || at.offset !== art.u || at.elevation !== art.v) {
       rev = (await this.gw.call('place_on_wall', { ...base, ...hang, item_id: itemId, offset: art.u, elevation: art.v, expected_rev: rev })).rev
     }
 

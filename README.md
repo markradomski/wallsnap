@@ -52,7 +52,7 @@ Height <= 200 cm; inside wall bounds; no overlap with doors or windows; ground-f
 ## Known limitations
 
 - Live-verified (2026-10-25, dev copy only): authenticated MCP connection; read of real walls; `place_on_wall` + `update_items` create (south wall, rotation 180) and update (north wall) with read-back, cross-checked through a separate FloorGen connection and the 2D render. **Not verified:** FloorGen's 3D view, walls with openings, diagonal real walls, and the stale-revision path against the real server. Unit and e2e tests use the mock gateway and synthetic geometry.
-- Apply uses `place_on_wall` (FloorGen sets flush contact and facing) and `update_items` for size. A new catalogue picture is 100 cm wide until resized, so near a wall end it is hung at the nearest valid offset, resized, then moved to the exact `u` (up to three writes).
+- Apply uses `place_on_wall` (FloorGen sets flush contact and facing) and `update_items` for size. `place_on_wall` validates the item's *current* size, so Apply resizes first and moves last: an existing item is resized (`update_items`) then moved (`place_on_wall`); a new 100×70 catalogue picture is first hung where it fits, then resized, then moved to the exact `u`/`v` (up to three writes). FloorGen's error `code`, `message` and `hint` are shown in the UI.
 - The reserved-wall rule is a length heuristic. Lighting obstructions are not checked. One artwork per wall; walls bounding no room are not offered; for walls shared by two rooms the first room's face is used.
 - Whether the item's width/height are the visible picture face (versus including its frame) is unconfirmed.
 

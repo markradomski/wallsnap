@@ -14,18 +14,28 @@ export interface Gateway {
 }
 
 export class GatewayError extends Error {
-  constructor(message: string, readonly tool: string) {
-    super(`${tool}: ${message}`)
+  constructor(message: string, readonly tool: string, readonly code?: string) {
+    super(message)
   }
+}
+
+/** FloorGen failure reply: { ok: false, code, message, hint?, details?, warnings? }. */
+export function describeFailure(body: Record<string, unknown>): { text: string; code?: string } {
+  const nested = isRec(body.error) ? body.error : body
+  const pick = (k: string) => (typeof nested[k] === 'string' ? (nested[k] as string) : typeof body[k] === 'string' ? (body[k] as string) : undefined)
+  const message = pick('message') ?? (typeof body.error === 'string' ? body.error : undefined) ?? pick('summary') ?? 'no message from FloorGen'
+  const hint = pick('hint')
+  const warnings = Array.isArray(body.warnings) ? body.warnings.filter((w): w is string => typeof w === 'string') : []
+  const text = [message, hint && `Hint: ${hint}`, ...warnings.map((w) => `Warning: ${w}`)].filter(Boolean).join(' ')
+  return { text, code: pick('code') }
 }
 
 /** Validates a raw FloorGen result envelope: { ok: true, rev, data } (anything else is an error). */
 export function toResult(tool: string, body: unknown): ToolResult {
   if (!isRec(body)) throw new GatewayError('unreadable response', tool)
   if (body.ok !== true) {
-    const e = body.error
-    const msg = isRec(e) && typeof e.message === 'string' ? e.message : typeof e === 'string' ? e : String(body.summary ?? 'failed')
-    throw new GatewayError(msg, tool)
+    const f = describeFailure(body)
+    throw new GatewayError(f.text, tool, f.code)
   }
   try {
     return { rev: rev(body.rev), data: body.data }

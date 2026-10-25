@@ -37,8 +37,10 @@ export function createApp(gw: Gateway, project: string) {
         if (e instanceof StaleError) return res.status(409).json({ error: message, code: 'stale' })
         if (e instanceof ValidationError) return res.status(422).json({ error: message, problems: e.problems })
         if (e instanceof SafetyError) return res.status(403).json({ error: message })
-        console.error(e)
-        res.status(e instanceof GatewayError || e instanceof BoundaryError ? 502 : 500).json({ error: message })
+        // Server-side log only; error text comes from FloorGen and never contains credentials.
+        console.error(e instanceof GatewayError ? `[FloorGen ${e.tool}${e.code ? ' ' + e.code : ''}] ${message}` : e)
+        if (e instanceof GatewayError && e.code === 'VALIDATION_FAILED') return res.status(422).json({ error: `FloorGen rejected the placement: ${message}`, code: e.code })
+        res.status(e instanceof GatewayError || e instanceof BoundaryError ? 502 : 500).json({ error: e instanceof GatewayError ? `FloorGen ${e.tool} failed: ${message}` : message })
       },
     )
 

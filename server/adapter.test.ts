@@ -96,3 +96,46 @@ describe('slanted wall', () => {
     expect(r.artwork.u).toBeCloseTo(200, 1)
   })
 })
+
+describe('regression: resizing an item that is currently too tall for its new elevation', () => {
+  it('resizes before moving, so FloorGen never sees the old size at the new elevation', async () => {
+    // fl_east is 400 x 250. Start with a 165 x 165 artwork low on the wall (as left by an earlier save).
+    const s0 = await adapter.loadWall('f_first', 'fl_east')
+    const big = await adapter.apply('f_first', 'fl_east', { width: 165, height: 165, u: 110.6, v: 35.2 }, s0.rev)
+    // Reported failure: 113.8 x 71.4 at u 116.6, v 117.6. 117.6 + 165 = 282.6 > 250 with the old size.
+    const next = { width: 113.8, height: 71.4, u: 116.6, v: 117.6 }
+    const r = await adapter.apply('f_first', 'fl_east', next, big.rev)
+    expect(r.created).toBe(false)
+    expect(r.artwork.width).toBeCloseTo(113.8)
+    expect(r.artwork.height).toBeCloseTo(71.4)
+    expect(r.artwork.u).toBeCloseTo(116.6)
+    expect(r.artwork.v).toBeCloseTo(117.6)
+  })
+
+  it('updates the same object: no duplicate is created', async () => {
+    const s0 = await adapter.loadWall('f_first', 'fl_east')
+    const big = await adapter.apply('f_first', 'fl_east', { width: 165, height: 165, u: 110.6, v: 35.2 }, s0.rev)
+    await adapter.apply('f_first', 'fl_east', { width: 113.8, height: 71.4, u: 116.6, v: 117.6 }, big.rev)
+    const items = (await mock.call('list_entities', { floor: 'f_first', type: ['item'] })).data as { rows: unknown[] }
+    expect(items.rows).toHaveLength(1)
+    expect(rec.calls.filter((c) => c.tool === 'place_on_wall' && c.args.catalog_id)).toHaveLength(1)
+  })
+
+  it('sizes before the final move, in that order', async () => {
+    const s0 = await adapter.loadWall('f_first', 'fl_east')
+    const big = await adapter.apply('f_first', 'fl_east', { width: 165, height: 165, u: 110.6, v: 35.2 }, s0.rev)
+    rec.calls.length = 0
+    await adapter.apply('f_first', 'fl_east', { width: 113.8, height: 71.4, u: 116.6, v: 117.6 }, big.rev)
+    expect(rec.writes().map((c) => c.tool)).toEqual(['update_items', 'place_on_wall'])
+  })
+
+  it('creating a tall-positioned small artwork also works (new picture is 100 x 70 until resized)', async () => {
+    const s = await adapter.loadWall('f_first', 'fl_east')
+    // v 200 + the catalogue's 70 cm would exceed 250; u 20 + 50 would overhang the wall start.
+    const r = await adapter.apply('f_first', 'fl_east', { width: 40, height: 40, u: 20, v: 200 }, s.rev)
+    expect(r.created).toBe(true)
+    expect(r.artwork).toMatchObject({ width: 40, height: 40 })
+    expect(r.artwork.u).toBeCloseTo(20)
+    expect(r.artwork.v).toBeCloseTo(200)
+  })
+})

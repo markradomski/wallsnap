@@ -78,7 +78,14 @@ export class MockGateway implements Gateway {
         const item: MockItem = existing ?? {
           id: `i_mock${++this.seq}`, floor, x: 0, y: 0, rotation: 0, width: 100, height: 70, depth: 3, elevation: 0,
         }
+        // Like FloorGen, validate against the item's CURRENT size, not a size that is about to be set.
         if (offset - item.width / 2 < 0 || offset + item.width / 2 > frame.length) this.fail(tool, 'item would overhang the wall')
+        if (elevation + item.height > wall.height) {
+          throw new GatewayError(
+            `The item is ${item.height} cm tall; at ${elevation} cm up it would reach ${elevation + item.height} cm but the wall is ${wall.height} cm high. Hint: Lower the elevation or pick a smaller item.`,
+            tool, 'VALIDATION_FAILED',
+          )
+        }
         const p = planPoint(frame, offset, flushPerp(wall.thickness, item.depth))
         Object.assign(item, { x: p.x, y: p.y, rotation: facingRotation(frame.normal), elevation })
         if (!existing) this.items.push(item)
