@@ -39,6 +39,27 @@ describe('HTTP API error reporting', () => {
   })
 })
 
+describe('partial save', () => {
+  it('reports code "partial" with the saved-state description', async () => {
+    const mock = new MockGateway()
+    let moves = 0
+    const gw: Gateway = {
+      kind: 'mock',
+      call: (tool, args) => (tool === 'place_on_wall' && args.item_id && ++moves ? Promise.reject(new GatewayError('nope', tool)) : mock.call(tool, args)),
+    }
+    const base = await serve(gw)
+    const put = async (art: object) => {
+      const wall = await (await fetch(`${base}/api/wall?floor=f_first&wall=fl_east`)).json()
+      return fetch(`${base}/api/artwork`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ floorId: 'f_first', wallId: 'fl_east', rev: wall.rev, artwork: art }) })
+    }
+    expect((await put({ width: 60, height: 40, u: 100, v: 100 })).status).toBe(200) // create: only catalogue placement
+    const res = await put({ width: 90, height: 50, u: 200, v: 100 })
+    const body = await res.json()
+    expect([res.status, body.code]).toEqual([502, 'partial'])
+    expect(body.error).toMatch(/Partially saved: it was resized to 90×50 cm/)
+  })
+})
+
 describe('/api/status 3D link', () => {
   const live: Gateway = { kind: 'floorgen', call: () => Promise.reject(new Error('not used')) }
   const status = async (gw: Gateway, project: string) => (await fetch(`${await serve(gw, project)}/api/status`)).json()

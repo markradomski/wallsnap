@@ -1,10 +1,21 @@
-.svg { width: 100%; max-height: 60vh; background: #fff; border: 1px solid #d5d9e0; border-radius: 6px; touch-action: none; }
-.wall { fill: #f5f2e9; stroke: #8a8577; stroke-width: 1; vector-effect: non-scaling-stroke; }
-.opening { fill: #cfe3f1; stroke: #6a8da6; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; }
-.floor { stroke: #1d2430; stroke-width: 2; vector-effect: non-scaling-stroke; }
-.art { fill: #4b5a70; stroke: #1d2430; stroke-width: 1; vector-effect: non-scaling-stroke; cursor: grab; outline: none; }
+/* overflow: visible lets orientation labels and dimension lines sit outside the wall rectangle. */
+.svg { display: block; width: 100%; height: 100%; overflow: visible; touch-action: none; user-select: none; font-size: var(--font); }
+.wall { fill: var(--wall-face); stroke: var(--wall-edge); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.opening { fill: var(--opening-fill); stroke: var(--opening-edge); stroke-width: 1; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; }
+.floor { stroke: var(--floor-line); stroke-width: 2; vector-effect: non-scaling-stroke; }
+.end, .endCentre { fill: var(--text); font-size: var(--font); font-weight: 600; }
+.endCentre { fill: var(--text-muted); font-weight: 500; }
+.dim line { stroke: var(--dim-line); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.dim text { fill: var(--text-muted); font-size: var(--font); }
+
+.art { fill: var(--art-fill); stroke: var(--art-edge); stroke-width: 1; vector-effect: non-scaling-stroke; cursor: grab; outline: none; }
+.art:hover { stroke: var(--accent); stroke-width: 2; }
 .art:active { cursor: grabbing; }
-.art:focus-visible, .art:focus { stroke: #e8590c; stroke-width: 3; fill: #55688a; }
-.end { font-size: 11px; fill: #1d2430; }
-.selected { stroke: #e8590c; stroke-width: 2; }
-.handle { fill: #fff; stroke: #e8590c; stroke-width: 2; vector-effect: non-scaling-stroke; }
+.art.selected, .art:focus-visible { stroke: var(--accent); stroke-width: 2; }
+.art:focus-visible { stroke-dasharray: none; filter: drop-shadow(0 0 0 var(--accent)); }
+
+.handle { fill: var(--surface); stroke: var(--accent); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.handleGroup:hover .handle { fill: var(--accent); }
+.handleGroup.active .handle { fill: var(--accent); stroke: var(--surface); }
+
+.readout { fill: var(--text); font-size: var(--font); font-weight: 650; paint-order: stroke; stroke: var(--wall-face); stroke-width: 4px; stroke-linejoin: round; pointer-events: none; font-variant-numeric: tabular-nums; }

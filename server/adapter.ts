@@ -7,6 +7,8 @@ import {
 import type { Gateway } from './gateway'
 
 export class StaleError extends Error {}
+/** A multi-step save stopped part-way: the message says exactly what FloorGen already holds. */
+export class PartialWriteError extends Error {}
 export class ValidationError extends Error {
   constructor(readonly problems: string[]) {
     super(problems.join(' '))
@@ -132,26 +134,47 @@ export class WallSnapAdapter {
     let created = false
     let itemId: string
     let at = { offset: art.u, elevation: art.v }
-
-    if (r.item) {
-      itemId = r.item.id
-    } else {
-      created = true
-      at = {
-        offset: Math.min(Math.max(art.u, CATALOG_WIDTH / 2), r.frame.length - CATALOG_WIDTH / 2),
-        elevation: Math.min(art.v, Math.max(0, r.wall.height - CATALOG_HEIGHT)),
-      }
-      const placed = await this.gw.call('place_on_wall', {
-        ...base, ...hang, catalog_id: CATALOG_ID, ...at, name: 'WallSnap artwork', expected_rev: rev,
-      })
-      itemId = id(rec(placed.data, 'place_on_wall data').item_id, 'item_id')
-      rev = placed.rev
+    // What FloorGen already holds if a later step fails, so the error can describe the real saved state.
+    const done: string[] = []
+    let step = 'create'
+    const partial = (e: unknown): never => {
+      if (done.length === 0 || e instanceof StaleError) throw e
+      const reason = e instanceof Error ? e.message : String(e)
+      const state = created
+        ? 'Reload to see the actual state; the new artwork now exists in FloorGen.'
+        : 'Reload to see the actual state; FloorGen holds the changes below.'
+      throw new PartialWriteError(
+        `Partially saved: ${done.join(', then ')}, but ${step === 'resize' ? 'resizing' : 'moving it to the requested position'} failed (${reason}). ${state}`,
+      )
     }
-    rev = (await this.gw.call('update_items', {
-      ...base, id: itemId, width: art.width, height: art.height, tag: TAG, expected_rev: rev,
-    })).rev
-    if (!created || at.offset !== art.u || at.elevation !== art.v) {
-      rev = (await this.gw.call('place_on_wall', { ...base, ...hang, item_id: itemId, offset: art.u, elevation: art.v, expected_rev: rev })).rev
+
+    try {
+      if (r.item) {
+        itemId = r.item.id
+      } else {
+        created = true
+        at = {
+          offset: Math.min(Math.max(art.u, CATALOG_WIDTH / 2), r.frame.length - CATALOG_WIDTH / 2),
+          elevation: Math.min(art.v, Math.max(0, r.wall.height - CATALOG_HEIGHT)),
+        }
+        const placed = await this.gw.call('place_on_wall', {
+          ...base, ...hang, catalog_id: CATALOG_ID, ...at, name: 'WallSnap artwork', expected_rev: rev,
+        })
+        itemId = id(rec(placed.data, 'place_on_wall data').item_id, 'item_id')
+        rev = placed.rev
+        done.push(`a new ${CATALOG_WIDTH}×${CATALOG_HEIGHT} cm placeholder artwork was created on the wall`)
+      }
+      step = 'resize'
+      rev = (await this.gw.call('update_items', {
+        ...base, id: itemId, width: art.width, height: art.height, tag: TAG, expected_rev: rev,
+      })).rev
+      done.push(`it was resized to ${art.width}×${art.height} cm`)
+      step = 'move'
+      if (!created || at.offset !== art.u || at.elevation !== art.v) {
+        rev = (await this.gw.call('place_on_wall', { ...base, ...hang, item_id: itemId, offset: art.u, elevation: art.v, expected_rev: rev })).rev
+      }
+    } catch (e) {
+      return partial(e)
     }
 
     // Success is reported only if a fresh read shows what was asked for.

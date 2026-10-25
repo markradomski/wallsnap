@@ -1,7 +1,7 @@
 import type { ApplyResult, Artwork, FloorSummary, WallState } from './types'
 
 export class ApiError extends Error {
-  constructor(message: string, readonly status: number) {
+  constructor(message: string, readonly status: number, readonly code?: string) {
     super(message)
   }
 }
@@ -9,7 +9,7 @@ export class ApiError extends Error {
 async function req<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, init)
   const body = await res.json().catch(() => ({}))
-  if (!res.ok) throw new ApiError(body.error ?? `Request failed (${res.status})`, res.status)
+  if (!res.ok) throw new ApiError(body.error ?? `Request failed (${res.status})`, res.status, typeof body.code === 'string' ? body.code : undefined)
   return body as T
 }
 

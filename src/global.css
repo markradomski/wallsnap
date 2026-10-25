@@ -1,3 +1,93 @@
-:root { color-scheme: light; font-family: system-ui, sans-serif; color: #1d2430; }
-body { margin: 0; background: #f4f5f7; }
+/* Semantic colour tokens. Components only use these; dark mode overrides values, never rules. */
+:root {
+  color-scheme: light;
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-size: 13px;
+
+  /* Application chrome stays dark navy in both themes. */
+  --chrome-bg: #0f1b33;
+  --chrome-surface: #1a2a4a;
+  --chrome-border: #2a3b5e;
+  --chrome-text: #e8ecf5;
+  --chrome-muted: #a5b1c9;
+
+  --bg: #eceef3;
+  --surface: #ffffff;
+  --surface-2: #f4f5f8;
+  --border: #d3d7e0;
+  --border-strong: #9aa2b3;
+  --text: #1a2133;
+  --text-muted: #566075;
+
+  --accent: #6d28d9;
+  --accent-hover: #5b21b6;
+  --accent-fg: #ffffff;
+  --accent-soft: rgba(109, 40, 217, 0.12);
+  --focus: #6d28d9;
+
+  --ok: #17692f;
+  --ok-soft: rgba(23, 105, 47, 0.12);
+  --unsaved: #8a5a00;
+  --unsaved-soft: rgba(138, 90, 0, 0.14);
+  --conflict: #b4400c;
+  --conflict-soft: rgba(180, 64, 12, 0.13);
+  --danger: #b42318;
+  --danger-soft: rgba(180, 35, 24, 0.12);
+
+  --wall-face: #f5f2e9;
+  --wall-edge: #8a8577;
+  --opening-fill: rgba(86, 160, 214, 0.28);
+  --opening-edge: #4c86ad;
+  --floor-line: #1a2133;
+  --dim-line: #7a8398;
+  /* The artwork's own colour is data (FloorGen's placeholder picture), so it is the same in every theme. */
+  --art-fill: #4b5a70;
+  --art-edge: #ffffff;
+  --disabled-bg: #e3e6ec;
+  --disabled-text: #7b8497;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #12161f;
+  --surface: #1b2130;
+  --surface-2: #232a3b;
+  --border: #323b50;
+  --border-strong: #5b6680;
+  --text: #e6e9f2;
+  --text-muted: #a3adc2;
+
+  --accent: #a78bfa;
+  --accent-hover: #c4b5fd;
+  --accent-fg: #170d33;
+  --accent-soft: rgba(167, 139, 250, 0.18);
+  --focus: #c4b5fd;
+
+  --ok: #5fd68a;
+  --ok-soft: rgba(95, 214, 138, 0.14);
+  --unsaved: #f2c14e;
+  --unsaved-soft: rgba(242, 193, 78, 0.14);
+  --conflict: #ff9a5c;
+  --conflict-soft: rgba(255, 154, 92, 0.15);
+  --danger: #ff8a80;
+  --danger-soft: rgba(255, 138, 128, 0.15);
+
+  --wall-face: #2a3243;
+  --wall-edge: #6c7690;
+  --opening-fill: rgba(110, 175, 225, 0.22);
+  --opening-edge: #6ea6cf;
+  --floor-line: #c9d1e3;
+  --dim-line: #8791a8;
+  --art-edge: #e6e9f2;
+  --disabled-bg: #2a3142;
+  --disabled-text: #7d879c;
+}
+
 *, *::before, *::after { box-sizing: border-box; }
+html, body, #root { height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--text); }
+
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+button, input, select { font: inherit; color: inherit; }
+
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }

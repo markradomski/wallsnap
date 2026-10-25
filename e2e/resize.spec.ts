@@ -2,10 +2,10 @@ import { expect, test, type Page } from '@playwright/test'
 
 const num = async (page: Page, label: string) => Number(await page.getByLabel(label).inputValue())
 const read = async (page: Page) => ({
-  width: await num(page, 'Width (cm)'),
-  height: await num(page, 'Height (cm)'),
-  u: await num(page, 'u: centre from endpoint A (cm)'),
-  v: await num(page, 'v: bottom above floor (cm)'),
+  width: await num(page, 'Width'),
+  height: await num(page, 'Height'),
+  u: await num(page, 'Horizontal position'),
+  v: await num(page, 'Bottom elevation'),
 })
 const edges = (a: { width: number; height: number; u: number; v: number }) => ({
   u0: a.u - a.width / 2, u1: a.u + a.width / 2, v0: a.v, v1: a.v + a.height,
@@ -108,8 +108,8 @@ test('SVG and numeric controls stay in sync both ways', async ({ page }) => {
   expect(Number(await rect.getAttribute('width'))).toBeCloseTo(a.width, 0)
   expect(Number(await rect.getAttribute('height'))).toBeCloseTo(a.height, 0)
 
-  await page.getByLabel('Width (cm)').fill('120')
-  await page.getByLabel('Height (cm)').fill('80')
+  await page.getByLabel('Width').fill('120')
+  await page.getByLabel('Height').fill('80')
   expect(Number(await rect.getAttribute('width'))).toBe(120)
   expect(Number(await rect.getAttribute('height'))).toBe(80)
   // Handles follow the typed size: the east handle sits on the rectangle's east edge.
@@ -119,8 +119,12 @@ test('SVG and numeric controls stay in sync both ways', async ({ page }) => {
 })
 
 test('a success message is cleared once the artwork is edited again', async ({ page }) => {
+  // Applies, so it uses its own wall (west): workers share one mock server.
+  await page.getByRole('combobox').nth(1).selectOption({ label: 'Room A — west wall, 400 cm' })
+  await expect(page.getByTestId('artwork')).toBeVisible()
   await page.getByRole('button', { name: 'Apply to FloorGen' }).click()
-  await expect(page.getByRole('alert')).toContainText('Verified in FloorGen')
+  await expect(page.getByTestId('message')).toContainText('Verified in FloorGen')
   await drag(page, 'hit-e', 30, 0)
-  await expect(page.getByRole('alert')).toHaveCount(0)
+  await expect(page.getByTestId('message')).not.toContainText('Verified')
+  await expect(page.getByTestId('save-status')).toHaveAttribute('data-state', 'unsaved')
 })

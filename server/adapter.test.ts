@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { StaleError, ValidationError, WallSnapAdapter } from './adapter'
+import { PartialWriteError, StaleError, ValidationError, WallSnapAdapter } from './adapter'
+import { GatewayError, type Gateway } from './gateway'
 import { Recorder } from './helpers.test-util'
 import { MockGateway } from './mock'
 import { guardWrites } from './safety'
@@ -137,5 +138,43 @@ describe('regression: resizing an item that is currently too tall for its new el
     expect(r.artwork).toMatchObject({ width: 40, height: 40 })
     expect(r.artwork.u).toBeCloseTo(20)
     expect(r.artwork.v).toBeCloseTo(200)
+  })
+})
+
+describe('partial writes are described honestly', () => {
+  /** Lets the first n place_on_wall calls through, then fails the rest. */
+  const failingAfter = (n: number): Gateway => {
+    let placed = 0
+    return {
+      kind: 'mock',
+      call: (tool, args) => {
+        if (tool === 'place_on_wall' && ++placed > n) {
+          return Promise.reject(new GatewayError('The item would overlap something.', tool, 'VALIDATION_FAILED'))
+        }
+        return mock.call(tool, args)
+      },
+    }
+  }
+
+  it('an existing artwork that was resized but not moved says so', async () => {
+    const s0 = await adapter.loadWall('f_first', 'fl_east')
+    const first = await adapter.apply('f_first', 'fl_east', { width: 60, height: 40, u: 100, v: 100 }, s0.rev)
+    const flaky = new WallSnapAdapter(failingAfter(0), 'mock-project')
+    const err = await flaky.apply('f_first', 'fl_east', { width: 90, height: 50, u: 200, v: 100 }, first.rev).catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(PartialWriteError)
+    expect((err as Error).message).toMatch(/resized to 90×50 cm/)
+    expect((err as Error).message).toMatch(/moving it to the requested position failed \(The item would overlap/)
+    // FloorGen really does hold the new size at the old position.
+    const now = await adapter.loadWall('f_first', 'fl_east')
+    expect(now.artwork).toMatchObject({ width: 90, height: 50 })
+    expect(now.artwork!.u).toBeCloseTo(100)
+  })
+
+  it('a failure before anything was saved is reported as a plain error, not a partial save', async () => {
+    const s = await adapter.loadWall('f_first', 'fl_east')
+    const err = await new WallSnapAdapter(failingAfter(0), 'mock-project')
+      .apply('f_first', 'fl_east', { width: 60, height: 40, u: 100, v: 100 }, s.rev).catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(GatewayError)
+    expect(err).not.toBeInstanceOf(PartialWriteError)
   })
 })

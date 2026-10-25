@@ -1,21 +1,19 @@
-.page { max-width: 1100px; margin: 0 auto; padding: 16px; }
-.pickers { display: flex; gap: 16px; flex-wrap: wrap; align-items: end; margin-bottom: 12px; }
-label { display: flex; flex-direction: column; gap: 4px; font-size: 14px; }
-select, input { padding: 6px 8px; font-size: 14px; min-width: 160px; }
-input[aria-invalid='true'] { border-color: #c92a2a; background: #fff5f5; }
-.dims { font-weight: 600; }
-.editor { display: grid; grid-template-columns: 1fr 240px; gap: 16px; align-items: start; }
-@media (max-width: 800px) { .editor { grid-template-columns: 1fr; } }
-.controls { display: flex; flex-direction: column; gap: 10px; }
-.controls button, button { padding: 8px 12px; font-size: 14px; cursor: pointer; }
-button:disabled { cursor: not-allowed; }
-.problems { color: #c92a2a; font-size: 13px; margin: 0; padding-left: 18px; }
-.ok { color: #2b8a3e; }
-.error { color: #c92a2a; }
-.info, .busy { color: #495057; }
-.mock { background: #fff3bf; padding: 6px 10px; border-radius: 4px; font-weight: 600; }
-.actions { display: flex; flex-wrap: wrap; gap: 8px; }
-.linkButton { display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; font-size: 14px; color: inherit; text-decoration: none; background: #fff; border: 1px solid #767676; border-radius: 3px; }
-.linkButton:hover { background: #eef0f3; }
-.linkButton:focus-visible, button:focus-visible { outline: 2px solid #e8590c; outline-offset: 2px; }
-.srOnly { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.app { display: flex; flex-direction: column; height: 100dvh; min-height: 0; }
+.mock { margin: 0; padding: 4px 14px; font-size: 12px; font-weight: 650; color: #3b2a00; background: #f2c14e; }
+
+.workspace { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) 320px; min-height: 0; }
+.editor { display: flex; flex-direction: column; min-width: 0; min-height: 0; padding: 12px 14px; }
+.meta { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12px; font-weight: 600; color: var(--text-muted); }
+.meta span:first-child { color: var(--text); }
+/* The stage reserves room around the wall for its dimension lines; the SVG meets-scales inside it. */
+.stage { flex: 1; min-height: 240px; padding: 44px 36px 40px 44px; }
+.empty { margin: auto; max-width: 28ch; text-align: center; color: var(--text-muted); }
+
+.workspace > aside, .workspace > form { border-left: 1px solid var(--border); min-height: 0; }
+
+@media (max-width: 900px) {
+  .app { height: auto; min-height: 100dvh; }
+  .workspace { grid-template-columns: minmax(0, 1fr); }
+  .stage { min-height: 320px; height: 52vh; padding: 36px 14px 36px 36px; }
+  .workspace > aside, .workspace > form { border-left: 0; border-top: 1px solid var(--border); }
+}

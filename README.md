@@ -28,10 +28,16 @@ npm run e2e     # Playwright: drag, numeric edit, validation, Apply (mock adapte
 npm run typecheck
 ```
 
+## Interface
+
+A full-height workspace: a dark navy top bar (floor and wall pickers, save status, theme), the wall elevation in the middle, and a properties inspector on the right (stacks under the editor on narrow screens). Themes are **System** (default, follows the OS live), **Light** and **Dark**; an explicit choice is stored in `localStorage` (`wallsnap.theme`). Colours are semantic CSS variables in `src/global.css`; the artwork keeps its own colour in every theme.
+
+Save status is always one of: not saved yet, unsaved changes, saving, saved · verified (only after read-back verification and until the next edit), loaded from FloorGen, revision conflict, partially saved, save failed, or fix validation errors. A multi-step write that stops part-way says exactly what FloorGen holds.
+
 ## Coordinates
 
-- `u`: distance from wall **endpoint A** to the artwork centre, in cm. Endpoint A is authoritative whatever direction the wall is stored in or which face you view; the SVG always draws A on the left and labels A and B.
-- `v`: the artwork's bottom edge above the floor, in cm. The artwork occupies `[u - w/2, u + w/2] x [v, v + h]`.
+- `u` (shown as *Horizontal position*): distance from wall **endpoint A** to the artwork centre, in cm. Endpoint A is authoritative whatever direction the wall is stored in or which face you view; the SVG always draws A on the left and labels A and B.
+- `v` (shown as *Bottom elevation*): the artwork's bottom edge above the floor, in cm. The artwork occupies `[u - w/2, u + w/2] x [v, v + h]`.
 - FloorGen item `x,y` is the item centre, `elevation` is its underside height and `rotation` is degrees clockwise. The adapter converts `u` to a plan point along A→B, pushes it out by `wall thickness/2 + item depth/2` towards the room so the picture sits flush, and sets the rotation to face the room.
 - A catalogue `picture-large` is placed once, resized with `update_items`, tagged `wallsnap`, and reused on later Applies.
 

@@ -1,15 +1,16 @@
 import { expect, test } from '@playwright/test'
 
+// Mutating tests each use their own wall (south here) because workers share one mock server.
 test('drag, numeric adjust and apply', async ({ page }) => {
   await page.goto('/')
   await expect(page.getByText('MOCK ADAPTER')).toBeVisible()
 
   await page.getByLabel('Floor').selectOption({ label: 'First floor' })
-  await page.getByRole('combobox').nth(1).selectOption({ label: 'Room A — north wall, 600 cm' })
+  await page.getByRole('combobox').nth(1).selectOption({ label: 'Room A — south wall, 600 cm' })
   await expect(page.getByText('Wall: 600 × 250 cm')).toBeVisible()
 
-  const centre = page.getByLabel('u: centre from endpoint A (cm)')
-  const bottom = page.getByLabel('v: bottom above floor (cm)')
+  const centre = page.getByLabel('Horizontal position')
+  const bottom = page.getByLabel('Bottom elevation')
   await expect(centre).toHaveValue('300')
 
   // Drag right and up.
@@ -39,19 +40,19 @@ test('drag, numeric adjust and apply', async ({ page }) => {
 
   // Numeric inputs + validation.
   await centre.fill('450')
-  await page.getByLabel('v: bottom above floor (cm)').fill('130')
-  await page.getByLabel('Height (cm)').fill('250')
+  await page.getByLabel('Bottom elevation').fill('130')
+  await page.getByLabel('Height').fill('250')
   await expect(page.getByText('Height cannot exceed 200 cm.')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Apply to FloorGen' })).toBeDisabled()
-  await page.getByLabel('Height (cm)').fill('50')
+  await page.getByLabel('Height').fill('50')
 
   await page.getByRole('button', { name: 'Apply to FloorGen' }).click()
-  await expect(page.getByRole('alert')).toContainText('Verified in FloorGen: created artwork 60×50 cm, u 450 cm, v 130 cm')
+  await expect(page.getByTestId('message')).toContainText('Verified in FloorGen: created artwork 60×50 cm, horizontal position 450 cm, bottom elevation 130 cm')
 
   // Re-applying edits the same object (no duplicate).
   await centre.fill('300')
   await page.getByRole('button', { name: 'Apply to FloorGen' }).click()
-  await expect(page.getByRole('alert')).toContainText('updated artwork')
+  await expect(page.getByTestId('message')).toContainText('updated artwork')
 })
 
 test('reserved ground-floor wall cannot be selected', async ({ page }) => {

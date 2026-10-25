@@ -1,6 +1,6 @@
 import express from 'express'
 import type { Artwork } from '../src/types'
-import { StaleError, ValidationError, WallSnapAdapter } from './adapter'
+import { PartialWriteError, StaleError, ValidationError, WallSnapAdapter } from './adapter'
 import { BoundaryError, isRec, num, rev } from './boundary'
 import { FloorGenGateway, GatewayError, type Gateway } from './gateway'
 import { MockGateway } from './mock'
@@ -36,6 +36,7 @@ export function createApp(gw: Gateway, project: string) {
         const message = e instanceof Error ? e.message : 'Unexpected error'
         if (e instanceof StaleError) return res.status(409).json({ error: message, code: 'stale' })
         if (e instanceof ValidationError) return res.status(422).json({ error: message, problems: e.problems })
+        if (e instanceof PartialWriteError) return res.status(502).json({ error: message, code: 'partial' })
         if (e instanceof SafetyError) return res.status(403).json({ error: message })
         // Server-side log only; error text comes from FloorGen and never contains credentials.
         console.error(e instanceof GatewayError ? `[FloorGen ${e.tool}${e.code ? ' ' + e.code : ''}] ${message}` : e)
