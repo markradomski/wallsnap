@@ -69,6 +69,35 @@ The viewer repeats the north-artwork check on every load; it reports a largest e
 Unit tests (`transform.test.ts`) cover the math for every rotation and wall direction, including slanted walls and the
 app's own `facingRotation`.
 
+## Why only two floors showed, and the control for the third
+
+**Root cause: the viewer hid the second floor on purpose.** The first version of the viewer set `visible = false` on the
+second-floor group so the camera could look down into the first-floor room (the second floor is a solid slab directly above it).
+That was not documented on screen, so the townhouse looked incomplete. It was not a problem with the model or the loader.
+
+Everything else was checked and ruled out, in the file and in the live scene:
+
+| Question | Finding |
+| --- | --- |
+| Does the GLB contain all three floors with renderable geometry? | Yes. Ground 407 triangles (8 meshes), first 506 (13), second 467 (10). No degenerate triangles, no non-finite vertices. The second floor has no stairs mesh because the FloorGen project has none there. |
+| Are they in the right place? | Bounds stack cleanly at Y 0 to 2.2, 2.2 to 4.4 and 4.4 to 6.6 m over the same X/Z footprint. |
+| Did the viewer load every mesh? | Yes: per floor, loaded meshes, triangles and bounds equal what the file declares (`/model-info` reads the GLB's JSON chunk; bounds agree to 0.1 mm). 32 mesh objects = 31 floor meshes + the artwork plane. |
+| Anything dropped, shifted, rescaled or duplicated? | No: every floor group has scale 1 and position 0, and nothing is added or copied. |
+| Clipping or culling? | No renderer or material clipping planes; no mesh has frustum culling disabled. |
+| Camera? | Near 0.05 m, far 100 m; the building is about 10 m across, and the second floor is inside the camera frustum. |
+| What stopped it drawing? | Only `visible: false` on the second-floor group. |
+
+**The control:** one checkbox, **Show second floor** (top-left), or `?floors=all` in the URL. It only toggles `visible`, so the artwork
+plane, its texture, position, orientation and room-facing behaviour are untouched (checked: identical before and after). It is off by
+default so the first-floor room and the artwork are visible straight away; the HUD says so and reports, per floor, whether the file
+and the scene agree. With the box ticked the camera is still framed on the first floor, so orbit or zoom out to see the whole building.
+
+![All three storeys](results/all-three-floors.jpg)
+
+Note: the model was re-exported on 26 Oct, after the artwork was moved in FloorGen (its elevation is now 68 cm). The 0.00 mm
+match against the generic solid still holds against the new file, and the geometry of the three floors is otherwise unchanged. The
+numbers in the verification table above are from the first export.
+
 ## Limitations that would affect integration
 
 1. **The model is a manual, stale snapshot.** `get_context` lists `export_glb` as "coming soon", so there is no MCP call to export

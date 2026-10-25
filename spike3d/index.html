@@ -9,11 +9,14 @@
       #view { position: fixed; inset: 0; }
       canvas { display: block; }
       #hud { position: fixed; left: 12px; bottom: 12px; max-width: min(560px, calc(100% - 24px)); padding: 8px 10px; border-radius: 6px; background: rgba(13, 17, 24, 0.82); border: 1px solid #323b50; line-height: 1.5; white-space: pre-wrap; }
+      #floors { position: fixed; left: 12px; top: 12px; padding: 6px 10px; border-radius: 6px; background: rgba(13, 17, 24, 0.82); border: 1px solid #323b50; cursor: pointer; user-select: none; }
+      #floors input { margin-right: 6px; accent-color: #a78bfa; }
       #hud.error { border-color: #ff8a80; color: #ffb4ad; }
     </style>
   </head>
   <body>
     <div id="view"></div>
+    <label id="floors"><input type="checkbox" id="showUpper" />Show second floor</label>
     <div id="hud" role="status">Starting…</div>
     <script type="module" src="./main.ts"></script>
   </body>

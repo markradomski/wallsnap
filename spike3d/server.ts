@@ -4,16 +4,18 @@
  *
  *   GET /model.glb  the exported townhouse model, from SPIKE_GLB_PATH (default ~/Downloads/townhouse-wallsnap-dev-3d.glb).
  *                   It is a private project export, so it is served from where it already is and never committed.
+ *   GET /model-info what the GLB declares per floor (meshes, triangles, bounds), read from its JSON chunk.
  *   GET /artwork    the live WallSnap artwork on the first-floor living-room north wall, in FloorGen plan coordinates.
  */
 import express from 'express'
-import { createReadStream, existsSync, statSync } from 'node:fs'
+import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { WallSnapAdapter } from '../server/adapter'
 import { arr, id, isRec, num, parseItem, parseRoom, parseWall, rec, str } from '../server/boundary'
 import { createGateway } from '../server/index'
 import { wallCoords, wallFrame } from '../src/geometry'
+import { describeFloors, readGlbJson } from './glbInfo'
 
 const GLB = process.env.SPIKE_GLB_PATH ?? join(homedir(), 'Downloads', 'townhouse-wallsnap-dev-3d.glb')
 const ORIGINS = ['http://localhost:5173', 'http://127.0.0.1:5173']
@@ -33,6 +35,16 @@ app.get('/model.glb', (_req, res) => {
   res.setHeader('Content-Type', 'model/gltf-binary')
   res.setHeader('Content-Length', statSync(GLB).size)
   createReadStream(GLB).pipe(res)
+})
+
+/** What the GLB file itself declares per floor (read from its JSON chunk), for the viewer to compare against its scene. */
+app.get('/model-info', (_req, res) => {
+  try {
+    if (!existsSync(GLB)) return res.status(404).json({ error: `GLB not found at ${GLB}. Set SPIKE_GLB_PATH.` })
+    res.json({ file: GLB, bytes: statSync(GLB).size, floors: describeFloors(readGlbJson(readFileSync(GLB))) })
+  } catch (e) {
+    res.status(500).json({ error: e instanceof Error ? e.message : 'Unreadable GLB' })
+  }
 })
 
 app.get('/artwork', async (_req, res) => {

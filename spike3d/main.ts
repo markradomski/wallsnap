@@ -9,6 +9,7 @@ import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { createImageStore, idbKV, itemKey } from '../src/imageStore'
+import { floorKey, type FloorInfo, type FloorKey } from './glbInfo'
 import { clusterSolids } from './solids'
 import { CM, boxError, expectedAabbCm, fitContain, placementFor, type Aabb, type PlanItem } from './transform'
 
@@ -105,16 +106,30 @@ async function main() {
   say('Loading the townhouse model…')
   const gltf = await new GLTFLoader().loadAsync(`${API}/model.glb`, (p) => p.total && say(`Loading the townhouse model… ${Math.round((p.loaded / p.total) * 100)}%`))
   scene.add(gltf.scene)
-  // Look into the first-floor room from above: hide the floor over it. (Its geometry is untouched.)
-  // (GLTFLoader sanitises node names, turning spaces into underscores, so match either form.)
-  const floorGroup = (prefix: string) => gltf.scene.children.find((c) => new RegExp(`^${prefix}[ _]Floor`, 'i').test(c.name))
-  const upper = floorGroup('Second')
-  if (upper) upper.visible = false
+  // Storeys by name. (GLTFLoader sanitises node names, turning spaces into underscores; floorKey accepts both.)
+  const groups = new Map<FloorKey, THREE.Object3D>()
+  for (const c of gltf.scene.children) {
+    const key = floorKey(c.name)
+    if (key) groups.set(key, c)
+  }
+  const first = groups.get('first')
+  if (!first) throw new Error('The model has no first-floor group.')
+  // What the file itself declares per floor, to compare with what ends up in the scene.
+  const declared = ((await (await fetch(`${API}/model-info`)).json()) as { floors: FloorInfo[] }).floors
+
+  // The second floor is HIDDEN by default, on purpose: it is a solid slab directly above the first-floor room, so from the
+  // overview camera it would cover the room the artwork hangs in. One checkbox (or ?floors=all) shows all three storeys.
+  // It only toggles `visible`: no geometry is removed, copied, moved or rescaled.
+  const upper = groups.get('second')
+  const toggle = document.getElementById('showUpper') as HTMLInputElement
+  toggle.checked = new URLSearchParams(location.search).get('floors') === 'all'
+  const applyVisibility = () => {
+    if (upper) upper.visible = toggle.checked
+  }
+  applyVisibility()
 
   // 3. Verify the transform against the GLB's own geometry: find the generic-artwork solids (FloorGen colour #4b5a70) on
   //    the first floor and compare the one for this item with the box its plan data predicts.
-  const first = floorGroup('First')
-  if (!first) throw new Error('The model has no first-floor group.')
   const verts: number[] = []
   first.traverse((o) => {
     const m = o as THREE.Mesh
@@ -180,7 +195,55 @@ async function main() {
   controls.update()
   const centre = new THREE.Vector3(...placement.position)
 
-  const summary = {
+  // 7. Is every floor really in the scene, unaltered, and could the camera see it? (Read after the camera is placed.)
+  gltf.scene.updateMatrixWorld(true)
+  const frustum = new THREE.Frustum()
+  const inspectFloors = () => {
+    camera.updateMatrixWorld()
+    frustum.setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse))
+    return declared.map((d) => {
+      const g = d.key ? groups.get(d.key) : undefined
+      if (!g || !d.key) return { key: d.key, name: d.name, inScene: false }
+      let meshes = 0, triangles = 0, cullingDisabled = 0, clipped = 0
+      g.traverse((o) => {
+        const m = o as THREE.Mesh
+        if (!m.isMesh) return
+        meshes++
+        triangles += (m.geometry.index ? m.geometry.index.count : m.geometry.getAttribute('position').count) / 3
+        if (!m.frustumCulled) cullingDisabled++
+        const mats = Array.isArray(m.material) ? m.material : [m.material]
+        if (mats.some((x) => x.clippingPlanes && x.clippingPlanes.length)) clipped++
+      })
+      const box = new THREE.Box3().setFromObject(g)
+      const near = (a: THREE.Vector3, b: [number, number, number]) => a.distanceTo(new THREE.Vector3(...b)) < 1e-4 // 0.1 mm
+      return {
+        key: d.key, name: d.name, inScene: true, visible: g.visible,
+        declared: { meshes: d.meshes, triangles: d.triangles }, loaded: { meshes, triangles },
+        countsMatch: meshes === d.meshes && triangles === d.triangles,
+        // Same vertices, same place and size as the file says: nothing shifted, rescaled or duplicated.
+        boundsMatch: !!d.bounds && near(box.min, d.bounds.min) && near(box.max, d.bounds.max),
+        yRangeM: [+box.min.y.toFixed(3), +box.max.y.toFixed(3)],
+        scale: g.scale.toArray(), position: g.position.toArray(),
+        inCameraFrustum: frustum.intersectsBox(box), meshesWithCullingDisabled: cullingDisabled, meshesWithClippingPlanes: clipped,
+      }
+    })
+  }
+  const floorsLine = () => {
+    const rows = inspectFloors()
+    const text = rows.map((r) => (r.inScene ? `${r.key} ${r.declared!.triangles} tris ${r.countsMatch && r.boundsMatch ? '✓' : '✗'}${r.visible ? '' : ' (hidden)'}` : `${r.key ?? r.name} MISSING`)).join(' · ')
+    return `Floors in file vs scene: ${text}`
+  }
+  let hudBase = ''
+  const refresh = () => {
+    summary.floors = inspectFloors()
+    say(`${hudBase}\n${floorsLine()}\nSecond floor ${upper?.visible ? 'shown: the camera is framed on the first floor, so orbit or zoom out to see it' : 'hidden so the first-floor room is visible (checkbox top-left)'}`)
+  }
+  toggle.addEventListener('change', () => {
+    applyVisibility()
+    refresh()
+  })
+
+  const summary: Record<string, unknown> & { floors?: unknown } = {
     ready: true,
     itemId: item.id,
     savedCm: { x: item.x, y: item.y, width: item.width, height: item.height, elevation: item.elevation, rotation: item.rotation, depth: item.depth, mirrorFlag: item.mirror },
@@ -197,16 +260,18 @@ async function main() {
     camera: camera.position.toArray(),
     target: controls.target.toArray(),
     centre: centre.toArray(),
+    renderer: { clippingPlanes: renderer.clippingPlanes.length, localClipping: renderer.localClippingEnabled },
+    cameraClip: { near: camera.near, far: camera.far, fov: camera.fov },
   }
-  ;(window as unknown as { __spike: unknown; __scene: THREE.Scene; __camera: THREE.Camera; __controls: OrbitControls }).__spike = summary
+  ;(window as unknown as { __spike: unknown }).__spike = summary
   Object.assign(window, { __scene: scene, __camera: camera, __controls: controls })
-  say(
+  hudBase =
     `Loaded: ${gltf.scene.children.length} floor groups · live artwork ${item.id}\n` +
       `Saved size ${item.width} × ${item.height} cm, centre (${item.x}, ${item.y}) cm, elevation ${item.elevation} cm on ${floor.name}\n` +
       `GLB solid vs plan prediction: ${best < 0.5 ? 'match' : 'MISMATCH'} (largest error ${(best * 10).toFixed(2)} mm, ${solids.length} solids)\n` +
       `Image ${stored.value.name} ${img.naturalWidth}×${img.naturalHeight} (ratio ${ratio.toFixed(2)}) → plane ${(fit.width * CM).toFixed(3)} × ${(fit.height * CM).toFixed(3)} m, ${frontGapMm.toFixed(1)} mm in front of the solid\n` +
-      `Face-on render vs source image: as-is ${orient.asIs.toFixed(1)} · mirrored ${orient.mirrored.toFixed(1)} · flipped ${orient.flipped.toFixed(1)} → ${orient.correct ? 'upright, not mirrored, not obscured' : 'CHECK ORIENTATION'}`,
-  )
+      `Face-on render vs source image: as-is ${orient.asIs.toFixed(1)} · mirrored ${orient.mirrored.toFixed(1)} · flipped ${orient.flipped.toFixed(1)} → ${orient.correct ? 'upright, not mirrored, not obscured' : 'CHECK ORIENTATION'}`
+  refresh()
 }
 
 main().catch((e) => {
