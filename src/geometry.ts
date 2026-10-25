@@ -114,3 +114,32 @@ export function wallCoords(f: WallFrame, p: Pt): { u: number; perp: number } {
 
 /** Distance from the wall centreline for an item of `depth` to sit flush on a wall of `thickness`. */
 export const flushPerp = (thickness: number, depth: number) => thickness / 2 + depth / 2
+
+// ---- Resize handles ----
+
+/** Which edges a handle moves: e = +u side (towards B), w = -u side (towards A), n = top (+v), s = bottom. */
+export type Handle = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw'
+
+/**
+ * Resize by dragging `handle` to wall-space point (u, v). The opposite edge(s) stay anchored, the moving
+ * edge is clamped to the wall and the size limits, and it can never cross the anchor.
+ */
+export function resizeFromHandle(wall: WallDims, art: Artwork, handle: Handle, to: { u: number; v: number }): Artwork {
+  const e = extent(art)
+  const maxH = Math.min(MAX_ART_HEIGHT, wall.height)
+  let { u0, u1, v0, v1 } = e
+  if (handle.includes('e')) u1 = clamp(to.u, u0 + MIN_SIZE, Math.min(wall.length, u0 + wall.length))
+  if (handle.includes('w')) u0 = clamp(to.u, Math.max(0, u1 - wall.length), u1 - MIN_SIZE)
+  if (handle.includes('n')) v1 = clamp(to.v, v0 + MIN_SIZE, Math.min(wall.height, v0 + maxH))
+  if (handle.includes('s')) v0 = clamp(to.v, Math.max(0, v1 - maxH), v1 - MIN_SIZE)
+  return { width: u1 - u0, height: v1 - v0, u: (u0 + u1) / 2, v: v0 }
+}
+
+/** Where a handle sits on the rectangle, in wall space. */
+export function handlePoint(art: Artwork, handle: Handle): { u: number; v: number } {
+  const e = extent(art)
+  return {
+    u: handle.includes('e') ? e.u1 : handle.includes('w') ? e.u0 : art.u,
+    v: handle.includes('n') ? e.v1 : handle.includes('s') ? e.v0 : art.v + art.height / 2,
+  }
+}

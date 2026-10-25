@@ -73,12 +73,17 @@ export function App() {
     else if (art) setText(Object.fromEntries(FIELDS.map((f) => [f.key, String(round1(art[f.key]))])))
   }, [art])
 
+  /** Any edit makes the displayed state unsaved, so a previous success message no longer applies. */
+  const edit = (a: Artwork) => {
+    setArt(a)
+    setMsg((m) => (m?.kind === 'ok' ? null : m))
+  }
   const typed = (key: keyof Artwork, value: string) => {
     setText((t) => ({ ...t, [key]: value }))
     const n = Number(value)
     if (value.trim() !== '' && Number.isFinite(n) && art) {
       typing.current = true
-      setArt({ ...art, [key]: n })
+      edit({ ...art, [key]: n })
     }
   }
   const parsed = useMemo(
@@ -136,7 +141,7 @@ export function App() {
 
       {state && art && (
         <div className={styles.editor}>
-          <Elevation wall={state.wall} artwork={art} onChange={setArt} />
+          <Elevation wall={state.wall} artwork={art} onChange={edit} />
           <form className={styles.controls} onSubmit={(e) => { e.preventDefault(); apply() }}>
             {FIELDS.map((f) => {
               const bad = !Number.isFinite(parsed[f.key])
