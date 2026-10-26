@@ -86,3 +86,23 @@ export interface PlanContext {
   /** The saved FloorGen artwork on this wall (raw plan coordinates), or null. */
   item: { id: string; x: number; y: number; rotation: number; width: number; height: number; depth: number; elevation: number; color: string } | null
 }
+
+/**
+ * Everything Walk mode needs to know about one storey, in FloorGen plan units (centimetres). Read-only, from one revision.
+ * Collision shapes are derived from it on the client by pure functions (src/viewer3d/walkGeometry.ts).
+ */
+export interface WalkData {
+  rev: number
+  floorId: string
+  /** Height of the floor's base above the ground: the summed heights of the floors below. */
+  baseCm: number
+  walls: { id: string; a: { x: number; y: number }; b: { x: number; y: number }; thickness: number }[]
+  openings: { id: string; wallId: string; kind: string; offset: number; width: number; sill: number; height: number; exterior: boolean }[]
+  /** Furniture and objects on this floor (the WallSnap artwork carries its tag). */
+  items: { id: string; x: number; y: number; rotation: number; width: number; depth: number; height: number; elevation: number; tag?: string }[]
+  /** Stairs that start on this floor. */
+  stairs: StairInfo[]
+  /** Stairs that start on the floor below: where they cut an opening in this floor's slab. */
+  stairsBelow: StairInfo[]
+}
+export interface StairInfo { id: string; x: number; y: number; rotation: number; width: number; steps: number; treadDepth: number; nosing: number; cutOpening: boolean; wellGap: number }

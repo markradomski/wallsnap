@@ -1,4 +1,4 @@
-import type { ApplyResult, Artwork, FloorSummary, PlanContext, WallState } from './types'
+import type { ApplyResult, Artwork, FloorSummary, PlanContext, WalkData, WallState } from './types'
 
 export class ApiError extends Error {
   constructor(message: string, readonly status: number, readonly code?: string) {
@@ -28,3 +28,6 @@ export const putArtwork = (floorId: string, wallId: string, artwork: Artwork, re
 /** Plan-space geometry for the 3D preview. Read-only. */
 export const getPlan = (floor: string, wall: string, itemId?: string | null) =>
   req<PlanContext>(`/api/plan?floor=${encodeURIComponent(floor)}&wall=${encodeURIComponent(wall)}${itemId ? `&item=${encodeURIComponent(itemId)}` : ''}`)
+
+/** Collision geometry for Walk mode. Read-only. */
+export const getWalk = (floor: string) => req<WalkData>(`/api/walk?floor=${encodeURIComponent(floor)}`)

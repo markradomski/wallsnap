@@ -84,6 +84,19 @@ The **2D / 3D** switch in the toolbar shows your artwork, with its actual image,
 - **Floors**: by default upper floors are hidden so the selected floor is visible; *Show upper floors* restores the whole building. This never changes placement.
 - Three.js is loaded only when you enter 3D. Without WebGL, 3D shows an explanation and 2D keeps working.
 
+### Walk mode
+
+*Walk* (next to *Orbit* in the 3D toolbar) puts you in the selected room at eye level (160 cm above the floor's base, 70° field of view), 2.5 m in front of the previewed artwork and facing it. W/S move, A/D strafe, Shift is faster, the mouse looks (click the view to capture it, Esc releases it), and the arrow keys also move and turn, so it works without a mouse capture. *Exit Walk* or *Orbit* brings back the orbit camera exactly as it was. Walk only moves the camera: no FloorGen writes, no change to the artwork or its saved/unsaved state, nothing stored.
+
+Collision is a 25 cm circle moving among oriented rectangles in the plan (pure code in `src/viewer3d/walkGeometry.ts` and `walkMove.ts`), built from FloorGen's own data read through `GET /api/walk?floor=…` (read-only):
+
+- **Walls**: real endpoints and thickness, corners closed. Doorways (no sill, 170 cm or more clear, not a window, not to the outside) are gaps; the wall either side stays solid. Windows, high sills, low lintels and exterior doors are walls.
+- **Furniture**: each item's own footprint (position, width, depth, rotation), never the merged 3D mesh. Items hanging at 90 cm or higher, rugs and the WallSnap artwork do not block.
+- **Stairs**: no climbing. A stair on this floor is an obstacle (run = steps × tread depth, by its width) and a stair from the floor below that cuts the slab is a hole (with its well gap).
+- Movement is cut into steps well under the body radius and pushed out along the contact normal, so it slides along walls, cannot tunnel through thin ones, and a move that cannot settle is refused. Speed does not depend on frame rate.
+
+Limitations: FloorGen does not report whether a door leaf is open, so every interior doorway is treated as open. Stair footprints are a conservative rectangle, so on the DEV first floor the only interior door (to the stairwell) opens onto the stair opening and cannot be passed. Eye height is fixed at 160 cm and there is no stair traversal, gravity or jumping. Browsers that refuse mouse capture (headless Chromium and the in-app browser here do) show a note and keep working from the keyboard; real capture could not be verified in this environment.
+
 ## Known limitations
 
 - Images live in one browser profile: they are not shared between browsers or devices, are lost if site data is cleared, and a draft image for a wall that is never saved stays in that browser's storage.

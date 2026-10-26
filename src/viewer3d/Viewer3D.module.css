@@ -3,6 +3,19 @@
 .spacer { flex: 1; }
 .badge { padding: 3px 10px; font-weight: 650; border-radius: 999px; background: var(--ok-soft); color: var(--ok); border: 1px solid var(--ok); }
 .badge[data-unsaved='true'] { background: var(--unsaved-soft); color: var(--unsaved); border-color: var(--unsaved); }
+.nav { display: inline-flex; border: 1px solid var(--border-strong); border-radius: 5px; overflow: hidden; }
+.nav button { padding: 3px 12px; font-size: 12px; font-weight: 650; color: var(--text-muted); background: transparent; border: 0; cursor: pointer; }
+.nav button + button { border-left: 1px solid var(--border-strong); }
+.nav button:hover { background: var(--accent-soft); color: var(--text); }
+.nav button[aria-pressed='true'] { background: var(--accent); color: var(--accent-fg); }
+.exit { padding: 3px 10px; font-size: 12px; font-weight: 600; color: var(--text); background: transparent; border: 1px solid var(--border-strong); border-radius: 5px; cursor: pointer; }
+.exit:hover { background: var(--accent-soft); border-color: var(--accent); }
+.walkStatus { color: var(--text-muted); }
+.walkStatus[data-phase='locked'] { color: var(--ok); font-weight: 650; }
+.hint { margin: 0; padding: 5px 10px; font-size: 12px; line-height: 1.4; color: var(--text); background: var(--accent-soft); border: 1px solid var(--accent); border-radius: 4px; }
+.hint kbd { padding: 0 5px; font: inherit; font-weight: 650; border: 1px solid var(--border-strong); border-radius: 3px; background: var(--bg); }
+.host:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.crosshair { position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%; background: color-mix(in srgb, var(--text) 70%, transparent); pointer-events: none; }
 .check { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; color: var(--text); }
 .check input { accent-color: var(--accent); }
 .check:has(input:disabled) { cursor: not-allowed; color: var(--text-muted); }

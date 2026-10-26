@@ -10,7 +10,9 @@ import { groupIndexFor, hasUpperFloors, visibleGroups, type FloorMode } from './
 import { describeMatch } from './matching'
 import { localPlanItem } from './plan'
 import { TownhouseScene, WebGLUnavailableError, type ModelReport } from './scene'
-import type { Artwork, PlanContext } from '../types'
+import { getWalk } from '../api'
+import type { WalkPhase } from './walkMove'
+import type { Artwork, PlanContext, WalkData } from '../types'
 import styles from './Viewer3D.module.css'
 
 export interface Viewer3DProps {
@@ -23,13 +25,25 @@ export interface Viewer3DProps {
   imageUrl: string | null
   /** True when the local artwork differs from what FloorGen holds (new, edited or not yet applied). */
   unsaved: boolean
+  /** Camera mode, kept by the App so it survives the panel being rebuilt when the floor changes (it resets on leaving 3D). */
+  nav: 'orbit' | 'walk'
+  onNav: (n: 'orbit' | 'walk') => void
+}
+
+const HINT_KEY = 'wallsnap.walkHintSeen'
+const hintSeen = () => {
+  try {
+    return localStorage.getItem(HINT_KEY) === '1'
+  } catch {
+    return false
+  }
 }
 
 const fmtDate = (ms: number) => new Date(ms).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
 
 type ModelStatus = 'loading' | 'none' | 'ready' | 'error'
 
-export default function Viewer3D({ project, plan, planError, art, imageUrl, unsaved }: Viewer3DProps) {
+export default function Viewer3D({ project, plan, planError, art, imageUrl, unsaved, nav, onNav: setNav }: Viewer3DProps) {
   const host = useRef<HTMLDivElement>(null)
   const scene = useRef<TownhouseScene | null>(null)
   const [ready, setReady] = useState(false)
@@ -45,17 +59,26 @@ export default function Viewer3D({ project, plan, planError, art, imageUrl, unsa
   const [img, setImg] = useState<HTMLImageElement | null>(null)
   const [imageProblem, setImageProblem] = useState(false)
   const [matchNote, setMatchNote] = useState<string | null>(null)
+  // Walk mode (a first-person camera on the same scene; read-only, camera only)
+  const [phase, setPhase] = useState<WalkPhase>('off')
+  const [walkData, setWalkData] = useState<WalkData | null>(null)
+  const [walkError, setWalkError] = useState<string | null>(null)
+  const [hintDone, setHintDone] = useState(hintSeen)
+  const [lockRefused, setLockRefused] = useState(false)
 
   // The renderer: created once per mount, fully disposed on unmount, so toggling 2D/3D never accumulates loops or listeners.
   useEffect(() => {
     if (!host.current) return
     try {
-      const s = new TownhouseScene(host.current)
+      const s = new TownhouseScene(host.current, setPhase, () => setLockRefused(true))
       scene.current = s
       ;(window as unknown as { __wallsnap3d?: () => unknown }).__wallsnap3d = () => s.debugState()
+      // Diagnostics for tests: only ever moves the camera, and refuses spots inside a collider.
+      ;(window as unknown as { __wallsnapWalkPlace?: unknown }).__wallsnapWalkPlace = (x: number, y: number, deg: number) => s.walk.debugPlace(x, y, deg)
       setReady(true)
       return () => {
         delete (window as unknown as { __wallsnap3d?: unknown }).__wallsnap3d
+        delete (window as unknown as { __wallsnapWalkPlace?: unknown }).__wallsnapWalkPlace
         s.dispose()
         scene.current = null
         setReady(false)
@@ -136,6 +159,53 @@ export default function Viewer3D({ project, plan, planError, art, imageUrl, unsa
     if (ready && report) scene.current?.setFloorVisibility(visibleGroups(count, selected, mode))
   }, [ready, report, count, selected, mode])
 
+  // Walk mode: fetch this storey's collision data (read-only), then hand it to the camera rig.
+  const walking = nav === 'walk' && !!report && !!plan
+  const floorId = plan?.floorId
+  const planRev = plan?.rev
+  useEffect(() => {
+    if (!walking || !floorId) return
+    let cancelled = false
+    setWalkError(null)
+    getWalk(floorId).then(
+      (d) => !cancelled && setWalkData(d),
+      (e: unknown) => !cancelled && setWalkError(e instanceof Error ? e.message : 'Could not read this floor from FloorGen.'),
+    )
+    return () => {
+      cancelled = true
+    }
+  }, [walking, floorId, planRev])
+
+  useEffect(() => {
+    const rig = scene.current?.walk
+    if (!rig) return
+    if (!walking) return rig.exit()
+    if (rig.phase === 'off') {
+      rig.enter()
+      host.current?.focus() // keys work straight away, even before the mouse is captured
+    }
+    if (walkData && plan && walkData.floorId === plan.floorId) {
+      rig.setData(walkData, scene.current!.walkTarget(), `${plan.floorId}:${plan.wall.id}`)
+      if (rig.start && !rig.start.ok) {
+        setWalkError(`Walk mode cannot start here: ${rig.start.reason}`)
+        setNav('orbit')
+      }
+    }
+  }, [walking, walkData, plan])
+
+  // Leaving the panel (2D) or changing project always ends Walk mode through the scene's own disposal.
+  const locked = phase === 'locked'
+  useEffect(() => {
+    if (locked && !hintDone) {
+      setHintDone(true)
+      try {
+        localStorage.setItem(HINT_KEY, '1')
+      } catch {
+        /* the hint just shows again next time */
+      }
+    }
+  }, [locked, hintDone])
+
   const fit = report && plan ? wallFitsModel(report.bounds, plan.wall.a, plan.wall.b) : null
 
   async function importModel(file: File) {
@@ -195,6 +265,24 @@ export default function Viewer3D({ project, plan, planError, art, imageUrl, unsa
       <div className={styles.bar}>
         <span className={styles.badge} data-unsaved={unsaved && !!art} data-testid="preview-badge">{badge}</span>
         {report && (
+          <div className={styles.nav} role="group" aria-label="Camera">
+            <button type="button" aria-pressed={nav === 'orbit'} data-testid="nav-orbit" onClick={() => setNav('orbit')}>Orbit</button>
+            <button type="button" aria-pressed={nav === 'walk'} data-testid="nav-walk" onClick={() => { setWalkError(null); setNav('walk') }}>Walk</button>
+          </div>
+        )}
+        {nav === 'walk' && (
+          <>
+            <span className={styles.walkStatus} data-phase={phase} data-testid="walk-status" role="status">
+              {phase === 'locked'
+                ? 'Mouse captured · Esc releases it'
+                : lockRefused
+                  ? 'This browser would not capture the mouse · turn with the arrow keys'
+                  : 'Click the view to capture the mouse'}
+            </span>
+            <button type="button" className={styles.exit} data-testid="walk-exit" onClick={() => setNav('orbit')}>Exit Walk</button>
+          </>
+        )}
+        {report && (
           <label className={styles.check} title={upper ? '' : 'There are no floors above the selected one'}>
             <input type="checkbox" checked={mode === 'all' && upper} disabled={!upper} onChange={(e) => setMode(e.target.checked ? 'all' : 'inspect')} />
             Show upper floors
@@ -214,6 +302,12 @@ export default function Viewer3D({ project, plan, planError, art, imageUrl, unsa
           </label>
         )}
       </div>
+      {nav === 'walk' && !hintDone && (
+        <p className={styles.hint} data-testid="walk-hint">
+          Walking at eye level (160 cm). <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> move, the mouse looks, <kbd>Shift</kbd> is faster, <kbd>Esc</kbd> releases the mouse. Arrow keys also move and turn.
+        </p>
+      )}
+      {walkError && <p className={styles.error} role="alert" data-testid="walk-error">{walkError}</p>}
       {importError && <p className={styles.error} role="alert" data-testid="import-error">{importError}</p>}
       {rec && (
         <p className={styles.snapshot} data-testid="snapshot-note">
@@ -223,7 +317,9 @@ export default function Viewer3D({ project, plan, planError, art, imageUrl, unsa
       )}
       {notes.map((n) => <p key={n} className={styles.note} role="status" data-testid="viewer-note">{n}</p>)}
       <div className={styles.stage}>
-        <div ref={host} className={styles.host} data-testid="viewer3d-canvas" />
+        <div ref={host} className={styles.host} data-testid="viewer3d-canvas" tabIndex={nav === 'walk' ? 0 : -1}
+          aria-label={nav === 'walk' ? 'Walk view. Use W A S D to move and the arrow keys to turn.' : undefined} />
+        {nav === 'walk' && phase !== 'off' && <span className={styles.crosshair} aria-hidden />}
         {overlay && (
           <div className={styles.overlay} data-testid="viewer-overlay" role={webglError || planError || status === 'error' ? 'alert' : 'status'}>
             <strong>{overlay.title}</strong>

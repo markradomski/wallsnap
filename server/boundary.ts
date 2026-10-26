@@ -50,9 +50,10 @@ function point(v: unknown, what: string): Pt {
 
 export interface FloorRow { id: string; name: string; kind: string; /** Storey height, cm. */ height: number }
 export interface WallRow { id: string; a: Pt; b: Pt; thickness: number; height: number }
-export interface OpeningRow { id: string; kind: string; wallId: string; offset: number; width: number; sill: number; height: number }
+export interface OpeningRow { id: string; kind: string; wallId: string; offset: number; width: number; sill: number; height: number; /** Opens to the outside of the building. */ exterior?: boolean }
 export interface RoomRow { key: string; name: string; wallIds: string[]; centroid: Pt }
-export interface ItemRow { id: string; x: number; y: number; rotation: number; width: number; height: number; depth: number; elevation: number; /** #rrggbb, when FloorGen reports one. */ color?: string }
+export interface ItemRow { id: string; x: number; y: number; rotation: number; width: number; height: number; depth: number; elevation: number; /** #rrggbb, when FloorGen reports one. */ color?: string; tag?: string }
+export interface StairRow { id: string; x: number; y: number; rotation: number; width: number; steps: number; treadDepth: number; nosing: number; cutOpening: boolean; wellGap: number }
 
 export function parseFloor(v: unknown): FloorRow {
   const r = rec(v, 'floor')
@@ -73,6 +74,7 @@ export function parseOpening(v: unknown): OpeningRow {
     id: id(r.id, 'opening.id'), kind: str(r.kind, 'opening.kind'), wallId: id(r.wall_id, 'opening.wall_id'),
     offset: num(r.offset_cm, 'opening.offset'), width: positive(r.width_cm, 'opening.width'),
     sill: nonNegative(e.sill, 'opening.sill'), height: positive(e.height, 'opening.height'),
+    exterior: Array.isArray(r.rooms) && r.rooms.includes('exterior'),
   }
 }
 export function parseRoom(v: unknown): RoomRow {
@@ -91,5 +93,15 @@ export function parseItem(v: unknown): ItemRow {
     width: positive(e.width, 'item.width'), height: positive(e.height, 'item.height'),
     depth: positive(e.depth, 'item.depth'), elevation: num(e.elevation, 'item.elevation'),
     color: typeof e.color === 'string' && /^#[0-9a-f]{6}$/i.test(e.color) ? e.color.toLowerCase() : undefined,
+    tag: typeof r.tag === 'string' ? r.tag.slice(0, 60) : undefined,
+  }
+}
+export function parseStair(v: unknown): StairRow {
+  const r = rec(v, 'stair')
+  const e = rec(r.entity, 'stair.entity')
+  return {
+    id: id(r.id, 'stair.id'), x: num(e.x ?? r.x, 'stair.x'), y: num(e.y ?? r.y, 'stair.y'), rotation: num(e.rotation ?? 0, 'stair.rotation'),
+    width: positive(e.width, 'stair.width'), steps: positive(e.steps, 'stair.steps'), treadDepth: positive(e.treadDepth, 'stair.treadDepth'),
+    nosing: nonNegative(e.nosing ?? 0, 'stair.nosing'), cutOpening: e.cutOpening === true, wellGap: nonNegative(e.wellGap ?? 0, 'stair.wellGap'),
   }
 }

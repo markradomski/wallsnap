@@ -14,6 +14,12 @@ export type Debug3d = {
   target: number[]
   resources: { geometries: number; textures: number }
   look: { distinctMaterials: number; colourMismatches: number } | null
+  walk: {
+    phase: 'off' | 'ready' | 'locked'
+    x: number | null; y: number | null; headingDeg: number | null; pitchDeg: number | null; eyeCm: number | null
+    loopRunning: boolean; listeners: number; colliders: number
+    start: { ok: true; distanceCm: number } | { ok: false; reason: string } | null
+  }
 }
 
 export const glbFile = (bytes: Uint8Array, name = 'townhouse.glb') => ({ name, mimeType: 'model/gltf-binary', buffer: Buffer.from(bytes) })

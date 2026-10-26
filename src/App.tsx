@@ -34,6 +34,7 @@ export function App() {
   const [adapter, setAdapter] = useState('')
   const [viewerUrl, setViewerUrl] = useState<string | null>(null)
   const [view, setView] = useState<'2d' | '3d'>('2d')
+  const [nav3d, setNav3d] = useState<'orbit' | 'walk'>('orbit')
   const [plan, setPlan] = useState<PlanContext | null>(null)
   const [planError, setPlanError] = useState<string | null>(null)
   const [projectId, setProjectId] = useState('')
@@ -346,7 +347,7 @@ export function App() {
                 </div>
                 <div className={styles.views} role="group" aria-label="View">
                   {(['2d', '3d'] as const).map((v) => (
-                    <button key={v} type="button" aria-pressed={view === v} data-testid={`view-${v}`} onClick={() => setView(v)}>{v.toUpperCase()}</button>
+                    <button key={v} type="button" aria-pressed={view === v} data-testid={`view-${v}`} onClick={() => { setView(v); if (v === '2d') setNav3d('orbit') }}>{v.toUpperCase()}</button>
                   ))}
                 </div>
               </div>
@@ -374,6 +375,8 @@ export function App() {
                       art={art}
                       imageUrl={image?.url ?? null}
                       unsaved={!!art && (!state.artwork || !sameArtwork(art, state.artwork))}
+                      nav={nav3d}
+                      onNav={setNav3d}
                     />
                   </Suspense>
                 </div>

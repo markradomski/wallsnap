@@ -194,3 +194,14 @@ describe('GET /api/plan', () => {
     expect([w.status, (await w.json()).code]).toEqual([404, 'wall_missing'])
   })
 })
+
+describe('GET /api/walk', () => {
+  it('serves read-only collision data for a floor and maps errors like the other routes', async () => {
+    const base = await serve(new MockGateway())
+    const ok = await fetch(`${base}/api/walk?floor=f_first`)
+    expect(ok.status).toBe(200)
+    expect(await ok.json()).toMatchObject({ floorId: 'f_first', baseCm: 250 })
+    expect((await fetch(`${base}/api/walk?floor=nope`)).status).toBe(422)
+    expect((await fetch(`${base}/api/walk?floor=bad%20id!`)).status).toBeGreaterThanOrEqual(400)
+  })
+})

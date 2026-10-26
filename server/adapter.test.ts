@@ -448,3 +448,51 @@ describe('planContext: read-only plan geometry for the 3D preview', () => {
     expect(rec.calls.every((c) => ['list_floors', 'list_entities'].includes(c.tool))).toBe(true)
   })
 })
+
+describe('walkData (collision geometry for Walk mode)', () => {
+  it('returns one storey: walls, openings, furniture, its own stairs and the stairs below that cut this slab', async () => {
+    const a = new WallSnapAdapter(new MockGateway(), 'mock-project')
+    const first = await a.walkData('f_first')
+    expect(first.floorId).toBe('f_first')
+    expect(first.baseCm).toBe(250) // the ground floor's height
+    expect(first.walls.map((w) => w.id)).toEqual(expect.arrayContaining(['fl_north', 'fl_east', 'fl_hn']))
+    expect(first.openings.find((o) => o.id === 'fo_door')).toMatchObject({ exterior: true, sill: 0 })
+    expect(first.openings.find((o) => o.id === 'fo_pass')).toMatchObject({ exterior: false, wallId: 'fl_east' })
+    expect(first.items.map((i) => i.id)).toEqual(expect.arrayContaining(['furn_sofa', 'furn_rug', 'furn_lamp']))
+    expect(first.stairs).toEqual([])
+    expect(first.stairsBelow).toMatchObject([{ id: 'gst_1', steps: 8, treadDepth: 25, cutOpening: true }])
+    const ground = await a.walkData('f_ground')
+    expect(ground.baseCm).toBe(0)
+    expect(ground.stairs.map((s) => s.id)).toEqual(['gst_1'])
+    expect(ground.stairsBelow).toEqual([])
+  })
+  it('reads only: no write tool is ever called, and an unknown floor is rejected', async () => {
+    const calls: string[] = []
+    const gw = new MockGateway()
+    const spy = { kind: gw.kind, call: (t: string, x: Record<string, unknown>) => (calls.push(t), gw.call(t, x)) }
+    const a = new WallSnapAdapter(spy, 'mock-project')
+    await a.walkData('f_first')
+    expect(calls.every((t) => t === 'list_floors' || t === 'list_entities')).toBe(true)
+    await expect(a.walkData('nope')).rejects.toThrow(/Unknown floor/)
+  })
+})
+
+describe('a floor where nothing is tagged yet (FloorGen answers NOT_FOUND for the tag query)', () => {
+  it('loads the wall with no artwork instead of failing', async () => {
+    const gw = new MockGateway()
+    const real: Gateway = {
+      kind: gw.kind,
+      call: (tool, args) => {
+        const ids = Array.isArray(args.ids) ? (args.ids as unknown[]) : []
+        const first = ids[0]
+        if (tool === 'list_entities' && typeof first === 'object' && first !== null && 'tag' in first) {
+          return Promise.reject(new GatewayError('Nothing on this design has the tag "wallsnap".', tool, 'NOT_FOUND'))
+        }
+        return gw.call(tool, args)
+      },
+    }
+    const state = await new WallSnapAdapter(real, 'mock-project').loadWall('f_first', 'fl_north')
+    expect(state.artwork).toBeNull()
+    expect(state.artworkId).toBeNull()
+  })
+})

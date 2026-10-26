@@ -86,7 +86,7 @@ export class MockGateway implements Gateway {
           : tag
           ? this.items.filter((i) => i.floor === floor && i.tag === tag).map(toRow)
           : [
-              ...(ENTITIES[floor] ?? []).filter((e) => types.includes(e.type) && !this.hiddenWalls.has(String(e.id))),
+              ...(ENTITIES[floor] ?? []).filter((e) => types.includes(e.type) && !this.hiddenWalls.has(String(e.id)) && (e.type !== 'item' || types.includes('wall'))), // fixed furniture only in whole-floor reads, never in artwork lookups
               ...(types.includes('item') ? this.items.filter((i) => i.floor === floor).map(toRow) : []),
             ]
         return { rev: this.rev, data: { rows: structuredClone(rows) } }

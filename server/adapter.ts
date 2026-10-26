@@ -1,10 +1,10 @@
 import { flushPerp, offWallReasons, validate, wallCoords, wallFrame, type WallFrame } from '../src/geometry'
-import type { ApplyResult, Artwork, FloorSummary, Opening, PlanContext, WallState } from '../src/types'
+import type { ApplyResult, Artwork, FloorSummary, Opening, PlanContext, WalkData, WallState } from '../src/types'
 import {
-  BoundaryError, arr, id, isRec, parseFloor, parseItem, parseOpening, parseRoom, parseWall, rec,
+  BoundaryError, arr, id, isRec, parseFloor, parseItem, parseOpening, parseRoom, parseStair, parseWall, rec,
   type FloorRow, type ItemRow, type OpeningRow, type RoomRow, type WallRow,
 } from './boundary'
-import type { Gateway } from './gateway'
+import { GatewayError, type Gateway } from './gateway'
 
 export class StaleError extends Error {}
 /** A multi-step save stopped part-way: the message says exactly what FloorGen already holds. */
@@ -135,7 +135,11 @@ export class WallSnapAdapter {
       }
     } else {
       // Existing WallSnap artwork lying flush on this wall.
-      const tagged = await this.rows(floorId, { type: ['item'], ids: [{ tag: TAG }] })
+      // FloorGen answers NOT_FOUND (not an empty list) when nothing on the floor carries the tag yet.
+      const tagged = await this.rows(floorId, { type: ['item'], ids: [{ tag: TAG }] }).catch((e: unknown) => {
+        if (e instanceof GatewayError && e.code === 'NOT_FOUND') return { rev: fl.rev, rows: [] as unknown[] } // the snapshot's own revision stands in; the read is re-checked for consistency
+        throw e
+      })
       itemRev = tagged.rev
       item = tagged.rows.map(parseItem).find((it) => {
         const c = wallCoords(frame, it)
@@ -162,6 +166,39 @@ export class WallSnapAdapter {
       wall: { id: wallId, a: r.wall.a, b: r.wall.b, length: r.frame.length, height: r.wall.height, thickness: r.wall.thickness, normal: r.frame.normal },
       item: it ? { id: it.id, x: it.x, y: it.y, rotation: it.rotation, width: it.width, height: it.height, depth: it.depth, elevation: it.elevation, color: it.color ?? '#4b5a70' } : null,
     }
+  }
+
+  /**
+   * What Walk mode collides with on one storey. Read-only; every part comes from the same project revision (re-read if it
+   * changes part-way). Furniture and stairs are the authoritative FloorGen objects, never reconstructed from the 3D export.
+   */
+  async walkData(floorId: string): Promise<WalkData> {
+    id(floorId, 'floor id')
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const fl = await this.floorsWithRev()
+      const at = fl.floors.findIndex((f) => f.id === floorId)
+      if (at < 0) throw new ValidationError(['Unknown floor.'])
+      const types = ['wall', 'opening', 'item', 'stair']
+      const here = await this.rows(floorId, { type: types })
+      const below = at > 0 ? await this.rows(fl.floors[at - 1].id, { type: ['stair'] }) : null
+      if (here.rev !== fl.rev || (below && below.rev !== fl.rev)) continue
+      const ofType = (rows: unknown[], t: string) => rows.filter((r) => isRec(r) && r.type === t)
+      return {
+        rev: fl.rev,
+        floorId,
+        baseCm: fl.floors.slice(0, at).reduce((sum, f) => sum + f.height, 0),
+        walls: ofType(here.rows, 'wall').map(parseWall).map((w) => ({ id: w.id, a: w.a, b: w.b, thickness: w.thickness })),
+        openings: ofType(here.rows, 'opening').map(parseOpening).map((o) => ({
+          id: o.id, wallId: o.wallId, kind: o.kind, offset: o.offset, width: o.width, sill: o.sill, height: o.height, exterior: o.exterior === true,
+        })),
+        items: ofType(here.rows, 'item').map(parseItem).map((i) => ({
+          id: i.id, x: i.x, y: i.y, rotation: i.rotation, width: i.width, depth: i.depth, height: i.height, elevation: i.elevation, tag: i.tag,
+        })),
+        stairs: ofType(here.rows, 'stair').map(parseStair),
+        stairsBelow: below ? ofType(below.rows, 'stair').map(parseStair) : [],
+      }
+    }
+    throw new StaleError('FloorGen kept changing while WallSnap was reading it. Try again in a moment.')
   }
 
   private toArtwork(frame: WallFrame, item: ItemRow): Artwork {

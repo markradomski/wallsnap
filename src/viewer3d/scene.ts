@@ -15,6 +15,8 @@ import { frameOf, savedPlanItem } from './plan'
 import { matchGenericArtwork, type MatchResult, type WallContext } from './matching'
 import { clusterSolidTriangles, withoutTriangles, type Solid } from './solids'
 import { CM, fitContain, placementFor, type PlanItem } from './transform'
+import { WalkRig, type WalkTarget } from './walkRig'
+import type { WalkPhase } from './walkMove'
 
 export class WebGLUnavailableError extends Error {
   constructor() {
@@ -38,6 +40,7 @@ export function createRenderer(): THREE.WebGLRenderer {
   renderer.toneMapping = THREE.NeutralToneMapping
   renderer.toneMappingExposure = 1
   renderer.shadowMap.enabled = true
+  renderer.shadowMap.autoUpdate = false // the sun and the building are static: shadows are redrawn only when `TownhouseScene.dirtyShadows` says so, so moving the camera stays cheap
   renderer.shadowMap.type = THREE.PCFSoftShadowMap
   return renderer
 }
@@ -148,10 +151,12 @@ export class TownhouseScene {
   private observer: ResizeObserver
   private onChange = () => this.invalidate()
   renderCount = 0
+  private shadowsDirty = true
+  readonly walk: WalkRig
   match: MatchResult = { status: 'unsaved', candidates: 0 }
   report: ModelReport | null = null
 
-  constructor(private host: HTMLElement) {
+  constructor(private host: HTMLElement, onWalkPhase: (p: WalkPhase) => void = () => undefined, onLockRefused?: () => void) {
     this.renderer = createRenderer()
     host.appendChild(this.renderer.domElement)
     this.env = addAmbient(this.scene, this.renderer)
@@ -169,6 +174,9 @@ export class TownhouseScene {
     this.backing.name = 'wallsnap-artwork-frame'
     this.controls = new OrbitControls(this.camera, this.renderer.domElement)
     this.controls.addEventListener('change', this.onChange)
+    this.walk = new WalkRig({
+      camera: this.camera, controls: this.controls, canvas: this.renderer.domElement, focusEl: host, invalidate: () => this.invalidate(), onPhase: onWalkPhase, onLockRefused,
+    })
     this.observer = new ResizeObserver(() => this.resize())
     this.observer.observe(host)
     this.resize()
@@ -189,6 +197,10 @@ export class TownhouseScene {
       this.raf = 0
       if (this.disposed) return
       this.renderCount++
+      if (this.shadowsDirty) {
+        this.shadowsDirty = false
+        this.renderer.shadowMap.needsUpdate = true
+      }
       this.renderer.render(this.scene, this.camera)
     })
   }
@@ -204,6 +216,7 @@ export class TownhouseScene {
       throw new Error('disposed')
     }
     this.disposeModel()
+    this.shadowsDirty = true
     this.modelId++
     this.model = gltf.scene
     this.scene.add(gltf.scene)
@@ -227,6 +240,7 @@ export class TownhouseScene {
   }
 
   private aimLight() {
+    this.shadowsDirty = true
     if (!this.model) return
     const n = this.plan?.wall.normal ?? { x: 0, y: 1 }
     aimSun(this.sun, new THREE.Box3().setFromObject(this.model), n.x, n.y)
@@ -234,6 +248,7 @@ export class TownhouseScene {
 
   /** Show or hide whole storeys (by exported group). Only toggles visibility: no geometry changes. */
   setFloorVisibility(visible: boolean[]) {
+    this.shadowsDirty = true
     this.groups.forEach((g, i) => (g.visible = visible[i] ?? true))
     this.invalidate()
   }
@@ -291,6 +306,7 @@ export class TownhouseScene {
   }
 
   private applyMatch() {
+    this.shadowsDirty = true
     this.restoreGeneric()
     this.collectGeneric()
     const plan = this.plan
@@ -380,7 +396,7 @@ export class TownhouseScene {
   /** Initial view derived from the wall: aim between the artwork and the wall's centre at furniture height, stand back and above. */
   frame() {
     const plan = this.plan
-    if (!plan) return
+    if (!plan || this.walk.phase !== 'off') return // never fight the first-person camera
     const f = frameOf(plan.wall)
     const L = f.length * CM
     const mid = new THREE.Vector3(((f.a.x + f.b.x) / 2) * CM, 0, ((f.a.y + f.b.y) / 2) * CM)
@@ -393,6 +409,17 @@ export class TownhouseScene {
     this.controls.update()
     this.framedFor = `${this.modelId}:${plan.floorId}:${plan.wall.id}`
     this.invalidate()
+  }
+
+  /** What Walk mode should face: the previewed artwork's centre (or the wall's middle without one), and the room-facing normal. */
+  walkTarget(): WalkTarget | null {
+    const plan = this.plan
+    if (!plan) return null
+    const n = plan.wall.normal
+    if (this.backing.visible) return { artwork: { x: this.backing.position.x / CM, y: this.backing.position.z / CM }, normal: { x: n.x, y: n.y } }
+    const a = plan.wall.a
+    const b = plan.wall.b
+    return { artwork: { x: (a.x + b.x) / 2 + n.x * (plan.wall.thickness / 2 + 1), y: (a.y + b.y) / 2 + n.y * (plan.wall.thickness / 2 + 1) }, normal: { x: n.x, y: n.y } }
   }
 
   /** For tests and diagnostics: a plain snapshot of what is in the scene. */
@@ -418,6 +445,7 @@ export class TownhouseScene {
       camera: this.camera.position.toArray().map((n) => +n.toFixed(3)),
       target: this.controls.target.toArray().map((n) => +n.toFixed(3)),
       resources: this.renderer.info.memory,
+      walk: this.walk.debugState(),
       look: this.report && { distinctMaterials: this.report.distinctMaterials, colourMismatches: this.report.colourMismatches },
     }
   }
@@ -441,6 +469,7 @@ export class TownhouseScene {
     this.disposed = true
     if (this.raf) cancelAnimationFrame(this.raf)
     this.observer.disconnect()
+    this.walk.dispose()
     this.controls.removeEventListener('change', this.onChange)
     this.controls.dispose()
     this.disposeModel()
