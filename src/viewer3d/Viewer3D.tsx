@@ -9,10 +9,11 @@ import { checkModelBytes, wallFitsModel } from './modelCheck'
 import { groupIndexFor, hasUpperFloors, visibleGroups, type FloorMode } from './floors'
 import { describeMatch } from './matching'
 import { localPlanItem } from './plan'
-import { TownhouseScene, WebGLUnavailableError, type ModelReport } from './scene'
-import { getWalk } from '../api'
+import { TownhouseScene, WebGLUnavailableError, type ModelReport, type OtherArtwork } from './scene'
+import { getArtworks, getWalk } from '../api'
+import { idbKV, itemKey, createImageStore } from '../imageStore'
 import type { WalkPhase } from './walkMove'
-import type { Artwork, PlanContext, WalkData } from '../types'
+import type { ArtworkCollection, Artwork, PlanContext, WalkData } from '../types'
 import styles from './Viewer3D.module.css'
 
 export interface Viewer3DProps {
@@ -65,6 +66,9 @@ export default function Viewer3D({ project, plan, planError, art, imageUrl, unsa
   const [walkError, setWalkError] = useState<string | null>(null)
   const [hintDone, setHintDone] = useState(hintSeen)
   const [lockRefused, setLockRefused] = useState(false)
+  // Every saved artwork in the project, and each one's locally stored image (by item id).
+  const [collection, setCollection] = useState<ArtworkCollection | null>(null)
+  const [otherImages, setOtherImages] = useState<Record<string, HTMLImageElement>>({})
 
   // The renderer: created once per mount, fully disposed on unmount, so toggling 2D/3D never accumulates loops or listeners.
   useEffect(() => {
@@ -144,6 +148,50 @@ export default function Viewer3D({ project, plan, planError, art, imageUrl, unsa
     setMatchNote(describeMatch(scene.current?.match ?? { status: 'unsaved', candidates: 0 }))
   }, [ready, plan, report])
 
+  // All saved artworks, whatever wall is selected. Read-only; re-read when the project revision moves (e.g. after Apply).
+  const planRev = plan?.rev
+  useEffect(() => {
+    let cancelled = false
+    getArtworks().then(
+      (c) => !cancelled && setCollection(c),
+      () => !cancelled && setCollection(null), // the selected artwork still shows; the others just are not drawn
+    )
+    return () => {
+      cancelled = true
+    }
+  }, [planRev])
+
+  // Their images come from the same local store the 2D editor uses; none is ever sent anywhere.
+  const savedIds = collection?.artworks.map((a) => a.id).join(',') ?? ''
+  useEffect(() => {
+    if (!savedIds) return setOtherImages({})
+    let cancelled = false
+    const urls: string[] = []
+    const store = createImageStore(idbKV)
+    Promise.all(
+      savedIds.split(',').map(async (id) => {
+        const r = await store.get(itemKey(project, id))
+        if (!r.ok || !r.value) return null
+        const url = URL.createObjectURL(r.value.blob)
+        urls.push(url)
+        const el = new Image()
+        el.src = url
+        try {
+          await el.decode()
+        } catch {
+          return null // unreadable: that artwork shows as a plain frame
+        }
+        return [id, el] as const
+      }),
+    ).then((pairs) => {
+      if (!cancelled) setOtherImages(Object.fromEntries(pairs.filter((p): p is readonly [string, HTMLImageElement] => p !== null)))
+    })
+    return () => {
+      cancelled = true
+      setTimeout(() => urls.forEach((u) => URL.revokeObjectURL(u)), 0)
+    }
+  }, [savedIds, project])
+
   // Unsaved edits: only transforms change here; never a rebuild.
   useEffect(() => {
     if (!ready) return
@@ -159,10 +207,29 @@ export default function Viewer3D({ project, plan, planError, art, imageUrl, unsa
     if (ready && report) scene.current?.setFloorVisibility(visibleGroups(count, selected, mode))
   }, [ready, report, count, selected, mode])
 
+  // Everything saved except the artwork being edited (that one is drawn from the editor's local state above).
+  const editedId = plan?.item?.id
+  useEffect(() => {
+    if (!ready || !report || !collection) return scene.current?.setOthers([])
+    scene.current?.setOthers(
+      collection.artworks
+        .filter((a) => a.id !== editedId)
+        .map((a): OtherArtwork => ({
+          id: a.id,
+          item: { x: a.x, y: a.y, rotation: a.rotation, width: a.width, height: a.height, depth: a.depth, elevation: a.elevation },
+          baseCm: a.baseCm,
+          color: a.color,
+          wall: a.wall,
+          image: otherImages[a.id] ?? null,
+          groupIndex: groupIndexFor(report.groupNames, collection.floors, a.floorId),
+        })),
+    )
+    // floor visibility is re-applied by the floor effect below whenever it changes; a fresh list reads the current groups
+  }, [ready, report, collection, editedId, otherImages])
+
   // Walk mode: fetch this storey's collision data (read-only), then hand it to the camera rig.
   const walking = nav === 'walk' && !!report && !!plan
   const floorId = plan?.floorId
-  const planRev = plan?.rev
   useEffect(() => {
     if (!walking || !floorId) return
     let cancelled = false

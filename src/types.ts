@@ -106,3 +106,26 @@ export interface WalkData {
   stairsBelow: StairInfo[]
 }
 export interface StairInfo { id: string; x: number; y: number; rotation: number; width: number; steps: number; treadDepth: number; nosing: number; cutOpening: boolean; wellGap: number }
+
+/** One saved WallSnap artwork anywhere in the project, in FloorGen plan units. Read-only, for the 3D preview. */
+export interface SavedArtwork {
+  id: string
+  floorId: string
+  /** Height of its floor's base. */
+  baseCm: number
+  x: number
+  y: number
+  rotation: number
+  width: number
+  height: number
+  depth: number
+  elevation: number
+  color: string
+  /** The wall it hangs on (same shape as PlanContext's), or null when it is not flush on any wall. */
+  wall: PlanContext['wall'] | null
+}
+export interface ArtworkCollection {
+  rev: number
+  floors: { id: string; name: string; height: number }[]
+  artworks: SavedArtwork[]
+}

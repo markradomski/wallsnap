@@ -496,3 +496,27 @@ describe('a floor where nothing is tagged yet (FloorGen answers NOT_FOUND for th
     expect(state.artworkId).toBeNull()
   })
 })
+
+describe('artworks (every saved WallSnap artwork, for the 3D preview)', () => {
+  it('lists each saved artwork with its floor, base height and the wall it hangs on; none when nothing is saved', async () => {
+    expect((await adapter.artworks()).artworks).toEqual([])
+    const n = await adapter.loadWall('f_first', 'fl_north')
+    const a = await adapter.apply('f_first', 'fl_north', { width: 80, height: 50, u: 450, v: 120 }, n.rev)
+    const g = await adapter.loadWall('f_ground', 'gs_east')
+    const c = await adapter.apply('f_ground', 'gs_east', { width: 60, height: 40, u: 200, v: 100 }, g.rev)
+    const all = await adapter.artworks()
+    expect(all.floors.map((f) => f.id)).toEqual(['f_ground', 'f_first'])
+    const byId = Object.fromEntries(all.artworks.map((x) => [x.id, x]))
+    expect(Object.keys(byId).sort()).toEqual([a.artworkId, c.artworkId].sort())
+    expect(byId[a.artworkId]).toMatchObject({ floorId: 'f_first', baseCm: 250, width: 80, height: 50, elevation: 120, wall: { id: 'fl_north' } })
+    expect(byId[c.artworkId]).toMatchObject({ floorId: 'f_ground', baseCm: 0, wall: { id: 'gs_east', thickness: 15 } })
+    expect(byId[a.artworkId].wall!.normal).toEqual({ x: 0, y: 1 })
+  })
+  it('reads only', async () => {
+    const calls: string[] = []
+    const gw = new MockGateway()
+    const spy: Gateway = { kind: gw.kind, call: (t, x) => (calls.push(t), gw.call(t, x)) }
+    await new WallSnapAdapter(spy, 'mock-project').artworks()
+    expect(calls.every((t) => t === 'list_floors' || t === 'list_entities')).toBe(true)
+  })
+})

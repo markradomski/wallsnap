@@ -1,4 +1,4 @@
-import type { ApplyResult, Artwork, FloorSummary, PlanContext, WalkData, WallState } from './types'
+import type { ApplyResult, Artwork, FloorSummary, ArtworkCollection, PlanContext, WalkData, WallState } from './types'
 
 export class ApiError extends Error {
   constructor(message: string, readonly status: number, readonly code?: string) {
@@ -31,3 +31,6 @@ export const getPlan = (floor: string, wall: string, itemId?: string | null) =>
 
 /** Collision geometry for Walk mode. Read-only. */
 export const getWalk = (floor: string) => req<WalkData>(`/api/walk?floor=${encodeURIComponent(floor)}`)
+
+/** Every saved WallSnap artwork in the project (read-only), for the 3D preview. */
+export const getArtworks = () => req<ArtworkCollection>('/api/artworks')

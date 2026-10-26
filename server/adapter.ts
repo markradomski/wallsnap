@@ -1,5 +1,5 @@
 import { flushPerp, offWallReasons, validate, wallCoords, wallFrame, type WallFrame } from '../src/geometry'
-import type { ApplyResult, Artwork, FloorSummary, Opening, PlanContext, WalkData, WallState } from '../src/types'
+import type { ApplyResult, Artwork, ArtworkCollection, FloorSummary, Opening, PlanContext, WalkData, WallState } from '../src/types'
 import {
   BoundaryError, arr, id, isRec, parseFloor, parseItem, parseOpening, parseRoom, parseStair, parseWall, rec,
   type FloorRow, type ItemRow, type OpeningRow, type RoomRow, type WallRow,
@@ -166,6 +166,51 @@ export class WallSnapAdapter {
       wall: { id: wallId, a: r.wall.a, b: r.wall.b, length: r.frame.length, height: r.wall.height, thickness: r.wall.thickness, normal: r.frame.normal },
       item: it ? { id: it.id, x: it.x, y: it.y, rotation: it.rotation, width: it.width, height: it.height, depth: it.depth, elevation: it.elevation, color: it.color ?? '#4b5a70' } : null,
     }
+  }
+
+  /**
+   * Every WallSnap artwork (tagged items) on every floor, each with the wall it hangs flush on. Read-only; all reads must
+   * report one project revision, like every other snapshot. Floors with nothing tagged answer NOT_FOUND, which means none.
+   */
+  async artworks(): Promise<ArtworkCollection> {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const fl = await this.floorsWithRev()
+      const revs = [fl.rev]
+      const bases = fl.floors.map((_, i) => fl.floors.slice(0, i).reduce((sum, f) => sum + f.height, 0))
+      // Floors are independent reads, so they run together (this is the slowest read: a round trip per floor and kind).
+      const perFloor = await Promise.all(fl.floors.map(async (f, at) => {
+        const [e, tagged] = await Promise.all([
+          this.floorEntities(f.id),
+          this.rows(f.id, { type: ['item'], ids: [{ tag: TAG }] }).catch((err: unknown) => {
+            if (err instanceof GatewayError && err.code === 'NOT_FOUND') return { rev: fl.rev, rows: [] as unknown[] }
+            throw err
+          }),
+        ])
+        revs.push(e.rev, tagged.rev)
+        return tagged.rows.filter((r) => isRec(r) && r.type === 'item').map(parseItem).map((it): ArtworkCollection['artworks'][number] => {
+          let wallInfo: ArtworkCollection['artworks'][number]['wall'] = null
+          for (const w of e.walls) {
+            const room = e.rooms.find((r) => r.wallIds.includes(w.id))
+            if (!room) continue
+            const frame = wallFrame(w.a, w.b, room.centroid)
+            const c = wallCoords(frame, it)
+            if (c.u > -2 && c.u < frame.length + 2 && Math.abs(c.perp - flushPerp(w.thickness, it.depth)) < 3) {
+              wallInfo = { id: w.id, a: w.a, b: w.b, length: frame.length, height: w.height, thickness: w.thickness, normal: frame.normal }
+              break
+            }
+          }
+          return {
+            id: it.id, floorId: f.id, baseCm: bases[at], x: it.x, y: it.y, rotation: it.rotation, width: it.width, height: it.height,
+            depth: it.depth, elevation: it.elevation, color: it.color ?? '#4b5a70', wall: wallInfo,
+          }
+        })
+      }))
+      const artworks = perFloor.flat()
+      if (revs.every((r) => r === revs[0])) {
+        return { rev: revs[0], floors: fl.floors.map((f) => ({ id: f.id, name: f.name, height: f.height })), artworks }
+      }
+    }
+    throw new StaleError('FloorGen kept changing while WallSnap was reading it. Try again in a moment.')
   }
 
   /**

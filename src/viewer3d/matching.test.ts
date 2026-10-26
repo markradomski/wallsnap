@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { facingRotation, wallFrame, type Pt } from '../geometry'
-import { EXACT_TOL_CM, describeMatch, matchGenericArtwork, type WallContext } from './matching'
+import { EXACT_TOL_CM, describeMatch, matchAllArtworks, matchGenericArtwork, type WallContext } from './matching'
 import { clusterSolidTriangles, clusterSolids, withoutTriangles, type Solid } from './solids'
 import { CM, expectedAabbCm, type PlanItem } from './transform'
 
@@ -125,5 +125,49 @@ describe('clusterSolidTriangles and withoutTriangles', () => {
     expect(withoutTriangles(data, 3, new Set()).length).toBe(data.length) // nothing removed: same data
     expect(withoutTriangles(data, 3, new Set([99])).length).toBe(data.length) // out-of-range ids ignored
     expect(Array.from(data)).toHaveLength(36) // the source is never mutated
+  })
+})
+
+describe('matching several artworks against one model', () => {
+  const [, a, b] = WALLS[0]
+  const N = hung(a, b, 150)
+  const N2 = hung(a, b, 450)
+  const [, ea, eb] = WALLS[3]
+  const E = hung(ea, eb, 200)
+  const entries = (...xs: { item: PlanItem; wall: WallContext }[]) => xs.map((x, i) => ({ id: `art${i}`, saved: x.item, wall: x.wall }))
+
+  it('finds every artwork exactly, each on its own solid, ignoring other furniture', () => {
+    const sofa = solidFor({ ...N.item, x: 400, y: 300, elevation: 0, width: 200, height: 80, depth: 90 })
+    const r = matchAllArtworks([solidFor(N.item), sofa, solidFor(E.item), solidFor(N2.item)], entries(N, E, N2))
+    expect([...r.values()].map((m) => [m.status, m.solid])).toEqual([['exact', 0], ['exact', 2], ['exact', 3]])
+  })
+  it('does not mistake a neighbour on the same wall for a stale stand-in: that solid is already claimed', () => {
+    // art0 moved since export (stale); art1 on the same wall is current. Without claims art0 would see two candidates.
+    const movedAway = hung(a, b, 60).item
+    const r = matchAllArtworks([solidFor(movedAway), solidFor(N2.item)], entries(N, N2))
+    expect(r.get('art1')).toMatchObject({ status: 'exact', solid: 1 })
+    expect(r.get('art0')).toMatchObject({ status: 'stale', solid: 0 })
+  })
+  it('never hides one solid for two artworks', () => {
+    const only = solidFor(hung(a, b, 300).item) // one stand-in on the wall, two saved artworks nearby
+    const r = matchAllArtworks([only], entries(N, N2))
+    const hidden = [...r.values()].map((m) => m.solid).filter((s) => s !== undefined)
+    expect(hidden.length).toBeLessThanOrEqual(1)
+    expect(new Set(hidden).size).toBe(hidden.length)
+  })
+  it('reports none for an artwork the model lacks, and hides nothing for it', () => {
+    const r = matchAllArtworks([solidFor(N.item)], entries(N, E))
+    expect(r.get('art0')?.status).toBe('exact')
+    expect(r.get('art1')).toMatchObject({ status: 'none' })
+    expect(r.get('art1')?.solid).toBeUndefined()
+  })
+  it('only considers the solids allowed for an artwork (its own colour)', () => {
+    const r = matchAllArtworks([solidFor(N.item), solidFor(N2.item)], [{ id: 'x', saved: N2.item, wall: N2.wall, allowed: [0] }])
+    expect(r.get('x')?.status).not.toBe('exact')
+  })
+  it('is deterministic: the same inputs always give the same answer', () => {
+    const solids = [solidFor(hung(a, b, 60).item), solidFor(N2.item), solidFor(E.item)]
+    const once = [...matchAllArtworks(solids, entries(N, N2, E))]
+    expect([...matchAllArtworks(solids, entries(N, N2, E))]).toEqual(once)
   })
 })

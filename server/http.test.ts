@@ -205,3 +205,12 @@ describe('GET /api/walk', () => {
     expect((await fetch(`${base}/api/walk?floor=bad%20id!`)).status).toBeGreaterThanOrEqual(400)
   })
 })
+
+describe('GET /api/artworks', () => {
+  it('serves the project-wide artwork list read-only', async () => {
+    const base = await serve(new MockGateway())
+    const r = await fetch(`${base}/api/artworks`)
+    expect(r.status).toBe(200)
+    expect(await r.json()).toMatchObject({ artworks: [], floors: [{ id: 'f_ground' }, { id: 'f_first' }] })
+  })
+})

@@ -2,6 +2,8 @@ import { expect, type Page, type Request } from '@playwright/test'
 
 export type Debug3d = {
   modelId: number
+  selectedId: string | null
+  others: { id: string; visible: boolean; textured: boolean; framePosition: number[]; frameSize: number[]; match: string | null }[]
   renderCount: number
   match: { status: string; solid?: number; errorMm?: number; candidates: number }
   groups: { name: string; visible: boolean }[]

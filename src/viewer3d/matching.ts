@@ -76,6 +76,44 @@ export function matchGenericArtwork(solids: Solid[], saved: PlanItem | null, wal
   return { status: 'none', candidates: 0 }
 }
 
+export interface MatchEntry {
+  id: string
+  saved: PlanItem
+  wall: WallContext
+  /** Indices of the solids that have this artwork's colour; all solids when omitted. */
+  allowed?: number[]
+}
+
+/**
+ * Match several saved artworks against the same model. Exact matches are settled first and claim their solid, so a solid
+ * can never be hidden for two artworks and an artwork's neighbours on the same wall are not mistaken for its stale
+ * stand-in; then the rest are matched (stale / ambiguous / none) among the solids still unclaimed. Deterministic: entries
+ * are processed in the order given. Returns the result per artwork id, with `solid` indexing the solids passed in.
+ */
+export function matchAllArtworks(solids: Solid[], entries: MatchEntry[]): Map<string, MatchResult> {
+  const out = new Map<string, MatchResult>()
+  const claimed = new Set<number>()
+  const run = (e: MatchEntry) => {
+    const idx = (e.allowed ?? solids.map((_, i) => i)).filter((i) => !claimed.has(i))
+    const r = matchGenericArtwork(idx.map((i) => solids[i]), e.saved, e.wall)
+    return r.solid === undefined ? r : { ...r, solid: idx[r.solid] }
+  }
+  for (const e of entries) {
+    const r = run(e)
+    if (r.status === 'exact') {
+      claimed.add(r.solid!)
+      out.set(e.id, r)
+    }
+  }
+  for (const e of entries) {
+    if (out.has(e.id)) continue
+    const r = run(e)
+    if (r.solid !== undefined) claimed.add(r.solid)
+    out.set(e.id, r)
+  }
+  return out
+}
+
 export function describeMatch(r: MatchResult): string | null {
   switch (r.status) {
     case 'exact':
