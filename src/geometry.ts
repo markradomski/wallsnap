@@ -38,6 +38,13 @@ export const extent = (a: Artwork) => ({
   v1: a.v + a.height,
 })
 
+/** The part of an opening the artwork covers, in wall cm (u along the wall, v above the floor), or null when they do not overlap. */
+export function openingOverlap(a: Artwork, o: Opening): { u0: number; u1: number; v0: number; v1: number } | null {
+  if (!overlapsOpening(a, o)) return null
+  const e = extent(a)
+  return { u0: Math.max(e.u0, o.left), u1: Math.min(e.u1, o.left + o.width), v0: Math.max(e.v0, o.sill), v1: Math.min(e.v1, o.sill + o.height) }
+}
+
 export function overlapsOpening(a: Artwork, o: Opening): boolean {
   const e = extent(a)
   return (

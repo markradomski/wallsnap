@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react'
-import { clampToWall, dimensionLabelPlacement, handlePoint, nudge, resizeFromHandle, round1, type Handle } from './geometry'
+import { clampToWall, dimensionLabelPlacement, handlePoint, nudge, openingOverlap, resizeFromHandle, round1, type Handle } from './geometry'
 import styles from './Elevation.module.css'
 import type { Artwork, WallView } from './types'
 
@@ -14,6 +14,9 @@ interface Props {
   onImageError?: () => void
   onChange: (a: Artwork) => void
 }
+
+/** 'Window' or 'Door' for the small label on an opening ('Opening' for a plain doorway without a leaf). */
+export const openingLabel = (kind: string) => (kind === 'window' ? 'Window' : kind === 'opening' ? 'Opening' : 'Door')
 
 const PLACEHOLDER: Artwork = { width: 1, height: 1, u: 0, v: 0 }
 
@@ -119,12 +122,27 @@ export function Elevation({ wall, artwork, image = null, lockRatio = false, onIm
       data-testid="elevation"
       style={{ ['--font' as string]: `${px(FONT_PX)}px` }}
     >
+      <defs>
+        <pattern id="conflict-hatch" width={px(7)} height={px(7)} patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+          <line x1={0} y1={0} x2={0} y2={px(7)} className={styles.hatch} />
+        </pattern>
+      </defs>
       <rect className={styles.wall} x={0} y={0} width={L} height={H} onPointerDown={() => setSelected(false)} />
-      {wall.openings.map((o) => (
-        <rect key={o.id} className={styles.opening} x={o.left} y={H - o.sill - o.height} width={o.width} height={o.height}>
-          <title>{o.kind}</title>
-        </rect>
-      ))}
+      {/* Openings sit in true wall coordinates: u from endpoint A, v above the floor (SVG y is flipped). Behind the artwork. */}
+      {wall.openings.map((o) => {
+        const hit = artwork ? openingOverlap(artwork, o) : null
+        const room = { w: o.width * pxPerCm, h: o.height * pxPerCm }
+        return (
+          <g key={o.id} data-testid="opening" data-kind={o.kind} data-conflict={hit ? 'true' : 'false'} pointerEvents="none">
+            <rect className={`${styles.opening} ${hit ? styles.openingHit : ''}`} x={o.left} y={H - o.sill - o.height} width={o.width} height={o.height}>
+              <title>{`${openingLabel(o.kind)}: ${round1(o.width)} × ${round1(o.height)} cm, ${round1(o.sill)} cm above the floor`}</title>
+            </rect>
+            {room.w >= 44 && room.h >= 18 && (
+              <text className={styles.openingLabel} x={o.left + px(5)} y={H - o.sill - o.height + px(13)}>{openingLabel(o.kind)}</text>
+            )}
+          </g>
+        )
+      })}
       <line className={styles.floor} x1={0} x2={L} y1={H} y2={H} />
 
       {/* Orientation and dimensions, sized in screen pixels. */}
@@ -178,6 +196,13 @@ export function Elevation({ wall, artwork, image = null, lockRatio = false, onIm
         onFocus={() => setSelected(true)}
       />
       )}
+      {/* Where the artwork covers an opening: hatching and an outline drawn over it, so the conflict shows without hiding the picture. */}
+      {artwork && wall.openings.map((o) => {
+        const hit = openingOverlap(artwork, o)
+        return hit ? (
+          <rect key={o.id} className={styles.conflict} data-testid="opening-conflict" x={hit.u0} y={H - hit.v1} width={hit.u1 - hit.u0} height={hit.v1 - hit.v0} pointerEvents="none" />
+        ) : null
+      })}
       {artwork && selected && HANDLES.map((h) => {
         const at = handlePoint(a, h)
         const cx = at.u

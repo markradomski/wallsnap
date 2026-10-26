@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  clampToWall, facingRotation, nudge, overlapsOpening, planPoint, validate, wallCoords, wallFrame, type Pt,
+  clampToWall, facingRotation, nudge, openingOverlap, overlapsOpening, planPoint, validate, wallCoords, wallFrame, type Pt,
 } from './geometry'
 import type { Artwork, Opening } from './types'
 
@@ -456,5 +456,22 @@ describe('proportional resize (resizeFromHandle with keepRatio)', () => {
     const back = lock('se', { u: 340, v: 60 }, big)
     expect(back.width).toBeCloseTo(80, 6)
     expect(back.height).toBeCloseTo(100, 6)
+  })
+})
+
+describe('openingOverlap', () => {
+  it('is the covered part of the opening in wall cm, and null when they only touch or miss', () => {
+    // art covers u 250..350, v 100..170; the window is u 200..320, v 90..210
+    expect(openingOverlap(art, { ...win, left: 200 })).toEqual({ u0: 250, u1: 320, v0: 100, v1: 170 })
+    expect(openingOverlap({ ...art, u: 150 }, win)).toBeNull() // edges touch
+    expect(openingOverlap({ ...art, v: 20 }, win)).toBeNull() // hangs below the sill (v1 = 90)
+    expect(openingOverlap({ ...art, v: 210 }, win)).toBeNull() // starts at the lintel
+  })
+  it('agrees with validate: overlap exists exactly when Apply would be blocked', () => {
+    const w = { ...wall, openings: [win] }
+    for (const u of [100, 150, 200, 260, 320, 370, 500]) {
+      const a = { ...art, u }
+      expect(validate(w, a).some((e) => /door or window/.test(e))).toBe(openingOverlap(a, win) !== null)
+    }
   })
 })

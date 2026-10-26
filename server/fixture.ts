@@ -40,6 +40,7 @@ export const ENTITIES: Record<string, Row[]> = {
     room('Room A', ['fl_north', 'fl_east', 'fl_south', 'fl_west'], 400, 300),
     opening('fo_window', 'window', 'fl_north', 200, 120, 90, 120),
     opening('fo_door', 'door', 'fl_south', 150, 90, 0, 205, true),
+    opening('fo_win2', 'window', 'fl_south', 520, 60, 100, 100),
     // A second room east of Room A, joined by a doorway in their shared wall, and a sofa and a narrow shelf in Room A.
     wall('fl_hn', [700, 100], [900, 100], 15, 250), wall('fl_he', [900, 100], [900, 500], 15, 250), wall('fl_hs', [900, 500], [700, 500], 15, 250),
     room('Hall', ['fl_east', 'fl_hn', 'fl_he', 'fl_hs'], 800, 300),
