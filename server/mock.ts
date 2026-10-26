@@ -129,6 +129,15 @@ export class MockGateway implements Gateway {
         this.rev++
         return { rev: this.rev, data: { item_ids: [it.id] } }
       }
+      case 'soft_delete': {
+        this.checkRev(tool, a)
+        const wanted = Array.isArray(a.ids) ? a.ids.filter((x): x is string => typeof x === 'string') : []
+        const gone = this.items.filter((i) => wanted.includes(i.id))
+        if (!gone.length) this.fail(tool, 'nothing to delete')
+        this.items = this.items.filter((i) => !wanted.includes(i.id))
+        this.rev++
+        return { rev: this.rev, data: { trash_ids: gone.map((i) => `tr_${i.id}`) } }
+      }
       default:
         return this.fail(tool, 'not implemented by the mock')
     }

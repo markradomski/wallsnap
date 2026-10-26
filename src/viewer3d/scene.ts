@@ -135,6 +135,8 @@ interface GenericMesh {
 export interface OtherArtwork {
   id: string
   item: PlanItem
+  /** The saved item to look for in the model when `item` is an unsaved edit of it (defaults to `item`). */
+  matchItem?: PlanItem
   baseCm: number
   color: string
   /** The wall it hangs on, for matching its stand-in in the model; null when it is not flush on any wall. */
@@ -371,7 +373,7 @@ export class TownhouseScene {
     if (plan && saved && selectedId) entries.push({ id: selectedId, saved, wall: this.wallContext(plan.wall, plan.baseCm), allowed: allowed(this.colourKey()) })
     for (const o of this.others.values()) {
       if (o.data.id === selectedId || !o.data.wall) continue
-      entries.push({ id: o.data.id, saved: o.data.item, wall: this.wallContext(o.data.wall, o.data.baseCm), allowed: allowed(o.data.color) })
+      entries.push({ id: o.data.id, saved: o.data.matchItem ?? o.data.item, wall: this.wallContext(o.data.wall, o.data.baseCm), allowed: allowed(o.data.color) })
     }
     this.matches = matchAllArtworks(flat.map((f) => f.solid), entries)
     this.match = selectedId && saved ? (this.matches.get(selectedId) ?? { status: 'unsaved', candidates: 0 }) : { status: 'unsaved', candidates: 0 }

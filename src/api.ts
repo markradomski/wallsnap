@@ -1,4 +1,4 @@
-import type { ApplyResult, Artwork, FloorSummary, ArtworkCollection, PlanContext, WalkData, WallState } from './types'
+import type { ApplyResult, Artwork, DeleteResult, FloorSummary, ArtworkCollection, PlanContext, WalkData, WallState } from './types'
 
 export class ApiError extends Error {
   constructor(message: string, readonly status: number, readonly code?: string) {
@@ -18,11 +18,20 @@ export const getFloors = () => req<FloorSummary[]>('/api/floors')
 /** With `itemId` (Reload) the saved artwork is read back by its FloorGen id. Read-only either way. */
 export const getWall = (floor: string, wall: string, itemId?: string) =>
   req<WallState>(`/api/wall?floor=${encodeURIComponent(floor)}&wall=${encodeURIComponent(wall)}${itemId ? `&item=${encodeURIComponent(itemId)}` : ''}`)
-export const putArtwork = (floorId: string, wallId: string, artwork: Artwork, rev: number, itemId: string | null) =>
+/** `newArtwork` adds another artwork on the wall instead of updating whatever is already there. */
+export const putArtwork = (floorId: string, wallId: string, artwork: Artwork, rev: number, itemId: string | null, newArtwork = false) =>
   req<ApplyResult>('/api/artwork', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ floorId, wallId, artwork, rev, itemId }),
+    body: JSON.stringify({ floorId, wallId, artwork, rev, itemId, newArtwork }),
+  })
+
+/** Moves one WallSnap artwork to FloorGen's trash (recoverable there). */
+export const deleteArtwork = (floorId: string, wallId: string, itemId: string, rev: number) =>
+  req<DeleteResult>('/api/artwork', {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ floorId, wallId, itemId, rev }),
   })
 
 /** Plan-space geometry for the 3D preview. Read-only. */

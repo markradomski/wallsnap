@@ -9,6 +9,7 @@ import { checkModelBytes, wallFitsModel } from './modelCheck'
 import { groupIndexFor, hasUpperFloors, visibleGroups, type FloorMode } from './floors'
 import { describeMatch } from './matching'
 import { localPlanItem } from './plan'
+import { DEFAULT_DEPTH_CM } from './plan'
 import { TownhouseScene, WebGLUnavailableError, type ModelReport, type OtherArtwork } from './scene'
 import { getArtworks, getWalk } from '../api'
 import { idbKV, itemKey, createImageStore } from '../imageStore'
@@ -26,6 +27,8 @@ export interface Viewer3DProps {
   imageUrl: string | null
   /** True when the local artwork differs from what FloorGen holds (new, edited or not yet applied). */
   unsaved: boolean
+  /** The other artworks on the selected wall, as they are in the editor now (unsaved edits and new ones included). */
+  localOthers: { key: string; id: string | null; art: Artwork; imageUrl: string | null }[]
   /** Camera mode, kept by the App so it survives the panel being rebuilt when the floor changes (it resets on leaving 3D). */
   nav: 'orbit' | 'walk'
   onNav: (n: 'orbit' | 'walk') => void
@@ -44,7 +47,7 @@ const fmtDate = (ms: number) => new Date(ms).toLocaleDateString(undefined, { day
 
 type ModelStatus = 'loading' | 'none' | 'ready' | 'error'
 
-export default function Viewer3D({ project, plan, planError, art, imageUrl, unsaved, nav, onNav: setNav }: Viewer3DProps) {
+export default function Viewer3D({ project, plan, planError, art, imageUrl, unsaved, localOthers, nav, onNav: setNav }: Viewer3DProps) {
   const host = useRef<HTMLDivElement>(null)
   const scene = useRef<TownhouseScene | null>(null)
   const [ready, setReady] = useState(false)
@@ -207,25 +210,67 @@ export default function Viewer3D({ project, plan, planError, art, imageUrl, unsa
     if (ready && report) scene.current?.setFloorVisibility(visibleGroups(count, selected, mode))
   }, [ready, report, count, selected, mode])
 
-  // Everything saved except the artwork being edited (that one is drawn from the editor's local state above).
+  // The wall's other artworks come from the editor (their unsaved edits count); decode their images once per picture.
+  const [localImages, setLocalImages] = useState<Record<string, HTMLImageElement>>({})
+  const localUrls = localOthers.map((o) => o.imageUrl ?? '').join('|')
+  useEffect(() => {
+    let cancelled = false
+    const urls = localUrls.split('|').filter(Boolean)
+    Promise.all(
+      urls.map(async (u) => {
+        const el = new Image()
+        el.src = u
+        try {
+          await el.decode()
+        } catch {
+          return null
+        }
+        return [u, el] as const
+      }),
+    ).then((pairs) => !cancelled && setLocalImages(Object.fromEntries(pairs.filter((p): p is readonly [string, HTMLImageElement] => p !== null))))
+    return () => {
+      cancelled = true
+    }
+  }, [localUrls])
+
+  // Everything saved except the artwork being edited (that one is drawn from the editor's own state above), and the wall's
+  // other artworks drawn from the editor too, so an unsaved edit or a new artwork shows without any export or save.
   const editedId = plan?.item?.id
+  const localSig = JSON.stringify(localOthers.map((o) => [o.key, o.id, o.art, o.imageUrl])) // a new array every render must not redraw the scene
+  const onWallIds = localOthers.map((o) => o.id).filter((x): x is string => !!x).join(',')
   useEffect(() => {
     if (!ready || !report || !collection) return scene.current?.setOthers([])
-    scene.current?.setOthers(
-      collection.artworks
-        .filter((a) => a.id !== editedId)
-        .map((a): OtherArtwork => ({
-          id: a.id,
-          item: { x: a.x, y: a.y, rotation: a.rotation, width: a.width, height: a.height, depth: a.depth, elevation: a.elevation },
-          baseCm: a.baseCm,
-          color: a.color,
-          wall: a.wall,
-          image: otherImages[a.id] ?? null,
-          groupIndex: groupIndexFor(report.groupNames, collection.floors, a.floorId),
-        })),
-    )
-    // floor visibility is re-applied by the floor effect below whenever it changes; a fresh list reads the current groups
-  }, [ready, report, collection, editedId, otherImages])
+    const skip = new Set([editedId, ...onWallIds.split(',').filter(Boolean)])
+    const saved = new Map(collection.artworks.map((a) => [a.id, a]))
+    const fromProject = collection.artworks
+      .filter((a) => !skip.has(a.id))
+      .map((a): OtherArtwork => ({
+        id: a.id,
+        item: { x: a.x, y: a.y, rotation: a.rotation, width: a.width, height: a.height, depth: a.depth, elevation: a.elevation },
+        baseCm: a.baseCm,
+        color: a.color,
+        wall: a.wall,
+        image: otherImages[a.id] ?? null,
+        groupIndex: groupIndexFor(report.groupNames, collection.floors, a.floorId),
+      }))
+    const fromWall = plan
+      ? localOthers.map((o): OtherArtwork => {
+          const s = o.id ? saved.get(o.id) : undefined
+          return {
+            id: o.id ?? o.key,
+            item: { ...localPlanItem(plan, o.art), depth: s?.depth ?? DEFAULT_DEPTH_CM },
+            matchItem: s && { x: s.x, y: s.y, rotation: s.rotation, width: s.width, height: s.height, depth: s.depth, elevation: s.elevation },
+            baseCm: plan.baseCm,
+            color: s?.color ?? '#4b5a70',
+            wall: s ? plan.wall : null,
+            image: o.imageUrl ? (localImages[o.imageUrl] ?? null) : null,
+            groupIndex: groupIndexFor(report.groupNames, plan.floors, plan.floorId),
+          }
+        })
+      : []
+    scene.current?.setOthers([...fromProject, ...fromWall])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, report, collection, editedId, otherImages, plan, localSig, localImages, onWallIds])
 
   // Walk mode: fetch this storey's collision data (read-only), then hand it to the camera rig.
   const walking = nav === 'walk' && !!report && !!plan

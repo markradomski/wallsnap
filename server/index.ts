@@ -68,7 +68,20 @@ export function createApp(gw: Gateway, project: string) {
     }
     const art = parseArtwork(body.artwork)
     const itemId = typeof body.itemId === 'string' ? body.itemId : null
-    return adapter.apply(body.floorId, body.wallId, art, r, itemId)
+    return adapter.apply(body.floorId, body.wallId, art, r, itemId, body.newArtwork === true)
+  }))
+  app.delete('/api/artwork', wrap(async (q) => {
+    const body: unknown = q.body
+    if (!isRec(body) || typeof body.floorId !== 'string' || typeof body.wallId !== 'string' || typeof body.itemId !== 'string') {
+      throw new ValidationError(['Malformed request.'])
+    }
+    let r: number
+    try {
+      r = rev(body.rev)
+    } catch {
+      throw new ValidationError(['Malformed revision.'])
+    }
+    return adapter.deleteArtwork(body.floorId, body.wallId, body.itemId, r)
   }))
   return app
 }

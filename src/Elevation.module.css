@@ -28,3 +28,8 @@
 
 .label rect { fill: var(--label-bg); stroke: var(--border-strong); stroke-width: 1; vector-effect: non-scaling-stroke; }
 .label text { fill: var(--text); font-size: var(--font); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+.other { cursor: pointer; }
+.otherBack { fill: var(--art-fill); }
+.otherEdge { fill: transparent; stroke: var(--art-edge); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.other:hover .otherEdge { stroke: var(--accent); stroke-width: 2; }

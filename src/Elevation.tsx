@@ -13,6 +13,11 @@ interface Props {
   lockRatio?: boolean
   onImageError?: () => void
   onChange: (a: Artwork) => void
+  /** The key of the selected artwork (resets the handles when the selection changes). */
+  selectionKey?: string | null
+  /** Other artworks on this wall: drawn, and selectable by a click; never edited here. */
+  others?: { key: string; artwork: Artwork; image: string | null }[]
+  onSelect?: (key: string) => void
 }
 
 /** 'Window' or 'Door' for the small label on an opening ('Opening' for a plain doorway without a leaf). */
@@ -37,7 +42,7 @@ const LABEL_CHAR_PX = 6.9 // tabular digits at FONT_PX; the pill adds padding so
  * Wall elevation. The viewBox is exactly the wall in cm (x = u from endpoint A, y flipped so 0 = floor), so geometry
  * never depends on screen size; the browser's meet-scaling keeps proportions and getScreenCTM maps pointers back.
  */
-export function Elevation({ wall, artwork, image = null, lockRatio = false, onImageError, onChange }: Props) {
+export function Elevation({ wall, artwork, image = null, lockRatio = false, onImageError, onChange, selectionKey = null, others = [], onSelect }: Props) {
   const a = artwork ?? PLACEHOLDER // never drawn when null; keeps the hooks and handlers below unconditional
   const svg = useRef<SVGSVGElement>(null)
   const grab = useRef<{ dx: number; dy: number } | null>(null)
@@ -46,7 +51,7 @@ export function Elevation({ wall, artwork, image = null, lockRatio = false, onIm
   const [selected, setSelected] = useState(true)
   const [pxPerCm, setPxPerCm] = useState(1)
 
-  useEffect(() => setSelected(true), [wall.id])
+  useEffect(() => setSelected(true), [wall.id, selectionKey])
   useEffect(() => {
     const el = svg.current
     if (!el) return
@@ -159,6 +164,19 @@ export function Elevation({ wall, artwork, image = null, lockRatio = false, onIm
         <text x={L / 2} y={H + dimGap + px(15)} textAnchor="middle">{round1(L)} cm</text>
         <text x={-dimGap - px(6)} y={H / 2} textAnchor="middle" transform={`rotate(-90 ${-dimGap - px(6)} ${H / 2})`}>{round1(H)} cm</text>
       </g>
+
+      {/* The other artworks on this wall: visible and clickable, but only the selected one has handles and moves. */}
+      {others.map((o) => (
+        <g key={o.key} data-testid="other-artwork" onPointerDown={() => onSelect?.(o.key)} className={styles.other}>
+          <rect className={styles.otherBack} x={o.artwork.u - o.artwork.width / 2} y={H - o.artwork.v - o.artwork.height} width={o.artwork.width} height={o.artwork.height} />
+          {o.image && (
+            <image href={o.image} x={o.artwork.u - o.artwork.width / 2} y={H - o.artwork.v - o.artwork.height} width={o.artwork.width} height={o.artwork.height} preserveAspectRatio="xMidYMid meet" pointerEvents="none" />
+          )}
+          <rect className={styles.otherEdge} x={o.artwork.u - o.artwork.width / 2} y={H - o.artwork.v - o.artwork.height} width={o.artwork.width} height={o.artwork.height}>
+            <title>Select this artwork</title>
+          </rect>
+        </g>
+      ))}
 
       {artwork && image && (
         <>

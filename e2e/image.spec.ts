@@ -424,7 +424,7 @@ test.describe('FloorGen receives geometry only', () => {
     const puts = requests.filter((r) => r.method === 'PUT')
     expect(puts).toHaveLength(1)
     const sent = JSON.parse(puts[0].body)
-    expect(Object.keys(sent).sort()).toEqual(['artwork', 'floorId', 'itemId', 'rev', 'wallId'])
+    expect(Object.keys(sent).sort()).toEqual(['artwork', 'floorId', 'itemId', 'newArtwork', 'rev', 'wallId']) // newArtwork is a plain boolean: create rather than update
     expect(Object.keys(sent.artwork).sort()).toEqual(['height', 'u', 'v', 'width'])
     expect(puts[0].body.length).toBeLessThan(400)
     expect(puts[0].body).not.toMatch(/data:|png|saved-art|blob/i)

@@ -35,7 +35,7 @@ describe('write guard: rejected writes never reach the transport', () => {
 
   it('refuses tools that are neither known reads nor known writes', async () => {
     const { transport, gw } = setup(WRITABLE_PROJECT)
-    for (const tool of ['soft_delete', 'duplicate_project', 'create_project', 'apply_ops', 'restore_checkpoint']) {
+    for (const tool of ['empty_trash', 'duplicate_project', 'create_project', 'apply_ops', 'restore_checkpoint']) {
       await expect(gw.call(tool, { project: WRITABLE_PROJECT })).rejects.toBeInstanceOf(SafetyError)
     }
     expect(transport.calls).toHaveLength(0)

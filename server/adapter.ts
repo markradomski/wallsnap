@@ -1,5 +1,5 @@
 import { flushPerp, offWallReasons, validate, wallCoords, wallFrame, type WallFrame } from '../src/geometry'
-import type { ApplyResult, Artwork, ArtworkCollection, FloorSummary, Opening, PlanContext, WalkData, WallState } from '../src/types'
+import type { ApplyResult, Artwork, ArtworkCollection, DeleteResult, FloorSummary, Opening, PlanContext, WalkData, WallState } from '../src/types'
 import {
   BoundaryError, arr, id, isRec, parseFloor, parseItem, parseOpening, parseRoom, parseStair, parseWall, rec,
   type FloorRow, type ItemRow, type OpeningRow, type RoomRow, type WallRow,
@@ -124,30 +124,29 @@ export class WallSnapAdapter {
       .filter((o) => o.wallId === wallId)
       .map((o) => ({ id: o.id, kind: o.kind, left: o.offset - o.width / 2, width: o.width, sill: o.sill, height: o.height }))
 
-    let item: ItemRow | undefined
-    let itemRev: number
+    // Every WallSnap artwork lying flush on this wall. FloorGen answers NOT_FOUND (not an empty list) when nothing on the
+    // floor carries the tag yet; the snapshot's own revision stands in then (the read is re-checked for consistency).
+    const tagged = await this.rows(floorId, { type: ['item'], ids: [{ tag: TAG }] }).catch((e: unknown) => {
+      if (e instanceof GatewayError && e.code === 'NOT_FOUND') return { rev: fl.rev, rows: [] as unknown[] }
+      throw e
+    })
+    const onWall = tagged.rows.filter((r) => isRec(r) && r.type === 'item').map(parseItem).filter((it) => {
+      const c = wallCoords(frame, it)
+      return c.u > -2 && c.u < frame.length + 2 && Math.abs(c.perp - flushPerp(wall.thickness, it.depth)) < 3
+    })
+    let item: ItemRow | undefined = onWall[0]
+    let itemRev = tagged.rev
     if (itemId) {
+      // The requested artwork is read by its persistent id, even if it has been moved off this wall.
       const found = await this.rows(floorId, { type: ['item'], ids: [itemId] })
       itemRev = found.rev
       item = found.rows.filter((r) => isRec(r) && r.type === 'item').map(parseItem).find((it) => it.id === itemId)
       if (!item) {
         throw new MissingError('The artwork no longer exists in FloorGen (it may have been deleted). Select the wall again to start a new one.', 'artwork_missing')
       }
-    } else {
-      // Existing WallSnap artwork lying flush on this wall.
-      // FloorGen answers NOT_FOUND (not an empty list) when nothing on the floor carries the tag yet.
-      const tagged = await this.rows(floorId, { type: ['item'], ids: [{ tag: TAG }] }).catch((e: unknown) => {
-        if (e instanceof GatewayError && e.code === 'NOT_FOUND') return { rev: fl.rev, rows: [] as unknown[] } // the snapshot's own revision stands in; the read is re-checked for consistency
-        throw e
-      })
-      itemRev = tagged.rev
-      item = tagged.rows.map(parseItem).find((it) => {
-        const c = wallCoords(frame, it)
-        return c.u > -2 && c.u < frame.length + 2 && Math.abs(c.perp - flushPerp(wall.thickness, it.depth)) < 3
-      })
     }
     const offWall = item ? offWallReasons(frame, wall.thickness, item) : []
-    return { revs: [fl.rev, e.rev, itemRev], wall, room, frame, openings, item, offWall, floors: fl.floors }
+    return { revs: [fl.rev, e.rev, tagged.rev, itemRev], wall, room, frame, openings, item, onWall, offWall, floors: fl.floors }
   }
 
   /**
@@ -257,9 +256,10 @@ export class WallSnapAdapter {
   async loadWall(floorId: string, wallId: string, itemId?: string): Promise<WallState> {
     const r = await this.read(floorId, wallId, itemId)
     const wall = { id: wallId, floorId, length: r.frame.length, height: r.wall.height, openings: r.openings }
+    const artworks = r.onWall.map((it) => ({ id: it.id, artwork: this.toArtwork(r.frame, it) }))
     if (r.item && r.offWall.length) {
       return {
-        rev: r.rev, wall, artwork: null, artworkId: r.item.id,
+        rev: r.rev, wall, artworks, artwork: null, artworkId: r.item.id,
         detached: {
           message: 'Artwork is no longer positioned on this wall.', reasons: r.offWall,
           width: r.item.width, height: r.item.height, elevation: r.item.elevation,
@@ -267,15 +267,17 @@ export class WallSnapAdapter {
       }
     }
     return {
-      rev: r.rev, wall, detached: null,
+      rev: r.rev, wall, artworks, detached: null,
       artwork: r.item ? this.toArtwork(r.frame, r.item) : null,
       artworkId: r.item?.id ?? null,
     }
   }
 
-  async apply(floorId: string, wallId: string, art: Artwork, expectedRev: number, knownItemId?: string | null): Promise<ApplyResult> {
+  async apply(floorId: string, wallId: string, art: Artwork, expectedRev: number, knownItemId?: string | null, forceNew = false): Promise<ApplyResult> {
     // With a known item id, that very object is updated (even if it was dragged off the wall): never a duplicate.
+    // `forceNew` is a deliberate "add another artwork": whatever else hangs here is left alone and a new object is created.
     const r = await this.read(floorId, wallId, knownItemId ?? undefined)
+    const existing = forceNew ? undefined : r.item
     if (r.rev !== expectedRev) throw new StaleError('The FloorGen project changed since you loaded this wall. Reload before applying.')
     const problems = validate({ length: r.frame.length, height: r.wall.height, openings: r.openings }, art)
     if (problems.length) throw new ValidationError(problems)
@@ -304,8 +306,8 @@ export class WallSnapAdapter {
     }
 
     try {
-      if (r.item) {
-        itemId = r.item.id
+      if (existing) {
+        itemId = existing.id
       } else {
         created = true
         at = {
@@ -344,5 +346,23 @@ export class WallSnapAdapter {
       throw new BoundaryError(`Verification failed: FloorGen holds different ${off.join(', ') || 'wall-contact'} values than requested (rev ${rev}).`)
     }
     return { artwork: saved, artworkId: itemId, rev: back.rev, created }
+  }
+
+  /**
+   * Move one WallSnap artwork to FloorGen's trash (recoverable there), nothing else. Only an item tagged as WallSnap's is ever
+   * deleted, only with the revision the caller last saw, and success is reported only once the item is really gone.
+   */
+  async deleteArtwork(floorId: string, wallId: string, itemId: string, expectedRev: number): Promise<DeleteResult> {
+    const r = await this.read(floorId, wallId, itemId) // throws MissingError if it is already gone
+    if (r.item?.tag !== TAG) throw new ValidationError(['Only artworks created by WallSnap can be deleted here.'])
+    if (r.rev !== expectedRev) throw new StaleError('The FloorGen project changed since you loaded this wall. Reload before deleting.')
+    const res = await this.gw.call('soft_delete', { project: this.project, floor: floorId, ids: [itemId], expected_rev: r.rev })
+    try {
+      await this.read(floorId, wallId, itemId)
+    } catch (e) {
+      if (e instanceof MissingError) return { artworkId: itemId, rev: res.rev }
+      throw e
+    }
+    throw new BoundaryError('Verification failed: the artwork is still in FloorGen after deleting it.')
   }
 }

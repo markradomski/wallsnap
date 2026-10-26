@@ -520,3 +520,67 @@ describe('artworks (every saved WallSnap artwork, for the 3D preview)', () => {
     expect(calls.every((t) => t === 'list_floors' || t === 'list_entities')).toBe(true)
   })
 })
+
+describe('several artworks on one wall', () => {
+  const floor = 'f_first'
+  const wall = 'fl_south' // not used by the delete tests below, so the shared mock stays independent per test
+  it('lists every artwork hanging on the wall, each with its own id', async () => {
+    const w0 = await adapter.loadWall(floor, wall)
+    expect(w0.artworks).toEqual([])
+    const a = await adapter.apply(floor, wall, { width: 60, height: 45, u: 250, v: 120 }, w0.rev, null, true)
+    const w1 = await adapter.loadWall(floor, wall)
+    const b = await adapter.apply(floor, wall, { width: 40, height: 40, u: 350, v: 150 }, w1.rev, null, true)
+    expect(b.created).toBe(true)
+    expect(b.artworkId).not.toBe(a.artworkId)
+    const w2 = await adapter.loadWall(floor, wall)
+    expect(w2.artworks.map((x) => x.id).sort()).toEqual([a.artworkId, b.artworkId].sort())
+    expect(w2.artworks.find((x) => x.id === a.artworkId)!.artwork).toEqual({ width: 60, height: 45, u: 250, v: 120 })
+  })
+  it('without the new-artwork flag, applying with an id updates that artwork and never another', async () => {
+    const w0 = await adapter.loadWall(floor, wall)
+    const a = await adapter.apply(floor, wall, { width: 60, height: 45, u: 250, v: 120 }, w0.rev, null, true)
+    const b = await adapter.apply(floor, wall, { width: 40, height: 40, u: 350, v: 150 }, (await adapter.loadWall(floor, wall)).rev, null, true)
+    const rev = (await adapter.loadWall(floor, wall)).rev
+    await adapter.apply(floor, wall, { width: 70, height: 50, u: 230, v: 110 }, rev, a.artworkId)
+    const after = await adapter.loadWall(floor, wall)
+    expect(after.artworks.find((x) => x.id === a.artworkId)!.artwork).toEqual({ width: 70, height: 50, u: 230, v: 110 })
+    expect(after.artworks.find((x) => x.id === b.artworkId)!.artwork).toEqual({ width: 40, height: 40, u: 350, v: 150 })
+    expect(after.artworks).toHaveLength(2)
+  })
+  it('deletes exactly one artwork, with a verified read-back, and leaves the others alone', async () => {
+    const w0 = await adapter.loadWall(floor, wall)
+    const a = await adapter.apply(floor, wall, { width: 60, height: 45, u: 250, v: 120 }, w0.rev, null, true)
+    const b = await adapter.apply(floor, wall, { width: 40, height: 40, u: 350, v: 150 }, (await adapter.loadWall(floor, wall)).rev, null, true)
+    const cur = await adapter.loadWall(floor, wall)
+    const r = await adapter.deleteArtwork(floor, wall, a.artworkId, cur.rev)
+    expect(r.artworkId).toBe(a.artworkId)
+    const after = await adapter.loadWall(floor, wall)
+    expect(after.artworks.map((x) => x.id)).toEqual([b.artworkId])
+    expect(after.artworks[0].artwork).toEqual({ width: 40, height: 40, u: 350, v: 150 })
+    await expect(adapter.deleteArtwork(floor, wall, a.artworkId, after.rev)).rejects.toBeInstanceOf(MissingError)
+  })
+  it('refuses a stale revision and anything that is not a WallSnap artwork', async () => {
+    const w0 = await adapter.loadWall(floor, wall)
+    const a = await adapter.apply(floor, wall, { width: 60, height: 45, u: 250, v: 120 }, w0.rev, null, true)
+    await expect(adapter.deleteArtwork(floor, wall, a.artworkId, a.rev - 1)).rejects.toBeInstanceOf(StaleError)
+    expect((await adapter.loadWall(floor, wall)).artworks).toHaveLength(1)
+    // an item somebody else placed (no WallSnap tag) is never deleted from here
+    const other = await mock.call('place_on_wall', { floor, wall_id: wall, face_room: ENTITIES[floor].find((r) => r.type === 'room')!.key, catalog_id: 'x', offset: 500, elevation: 100, name: 'Someone else' })
+    const otherId = (other.data as { item_id: string }).item_id
+    const rev = (await adapter.loadWall(floor, wall)).rev
+    await expect(adapter.deleteArtwork(floor, wall, otherId, rev)).rejects.toBeInstanceOf(ValidationError)
+    expect(rec.calls.some((c) => c.tool === 'soft_delete')).toBe(false)
+  })
+  it('sends soft_delete only for the chosen id and only to the writable project', async () => {
+    const calls: { tool: string; args: Record<string, unknown> }[] = []
+    const gw = new MockGateway()
+    const guarded = guardWrites({ kind: gw.kind, call: (t, x) => (calls.push({ tool: t, args: x }), gw.call(t, x)) }, 'mock-project')
+    const a2 = new WallSnapAdapter(guarded, 'mock-project')
+    const w0 = await a2.loadWall(floor, wall)
+    const a = await a2.apply(floor, wall, { width: 60, height: 45, u: 250, v: 120 }, w0.rev, null, true)
+    await a2.deleteArtwork(floor, wall, a.artworkId, (await a2.loadWall(floor, wall)).rev)
+    const del = calls.filter((c) => c.tool === 'soft_delete')
+    expect(del).toHaveLength(1)
+    expect(del[0].args).toMatchObject({ project: 'mock-project', floor, ids: [a.artworkId] })
+  })
+})

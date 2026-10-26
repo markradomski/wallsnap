@@ -51,10 +51,17 @@ export interface Detached {
 
 export interface WallState {
   wall: WallView
+  /** Every WallSnap artwork hanging on this wall (flush on its face), each with its FloorGen id. */
+  artworks: { id: string; artwork: Artwork }[]
   artwork: Artwork | null
   /** FloorGen's persistent id of the WallSnap artwork, once known. Reload and Apply act on this object. */
   artworkId: string | null
   detached: Detached | null
+  rev: number
+}
+
+export interface DeleteResult {
+  artworkId: string
   rev: number
 }
 

@@ -6,13 +6,14 @@ export const WRITABLE_PROJECT = 'p_1ii0qmfr58hv4'
 export const ORIGINAL_PROJECT = 'p_128q3xq17slpfi'
 
 const READ_TOOLS = new Set(['list_floors', 'list_entities', 'describe_project', 'get_entity', 'search_catalog'])
-const WRITE_TOOLS = new Set(['place_item', 'place_on_wall', 'update_items'])
+// soft_delete moves an item to the project's trash (restore_trash brings it back); the adapter only ever sends it for a WallSnap-tagged artwork.
+const WRITE_TOOLS = new Set(['place_item', 'place_on_wall', 'update_items', 'soft_delete'])
 
 export class SafetyError extends Error {}
 
 /**
  * Wraps the transport so that no write can leave the process unless it targets `writable`.
- * Unknown tools are refused outright (so e.g. duplicate_project or soft_delete can never be sent).
+ * Unknown tools are refused outright (so e.g. duplicate_project can never be sent).
  */
 export function guardWrites(inner: Gateway, writable: string): Gateway {
   if (writable === ORIGINAL_PROJECT) throw new SafetyError('The original townhouse project can never be writable.')

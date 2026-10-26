@@ -29,6 +29,9 @@ export type OpResult = { ok: true } | { ok: false; reason: 'unavailable' | 'full
 /** Keys tie an image to the FloorGen project and the persistent artwork item id, or to a not-yet-saved wall draft. */
 export const itemKey = (project: string, itemId: string) => `${project}/item/${itemId}`
 export const draftKey = (project: string, floorId: string, wallId: string) => `${project}/draft/${floorId}/${wallId}`
+/** A not-yet-saved artwork's image: the wall's first draft keeps the original key, further ones add their local id. */
+export const slotDraftKey = (project: string, floorId: string, wallId: string, localKey: string) =>
+  localKey === 'draft' ? draftKey(project, floorId, wallId) : `${draftKey(project, floorId, wallId)}/${localKey}`
 
 function asStored(v: unknown): StoredImage | null {
   if (typeof v !== 'object' || v === null) return null

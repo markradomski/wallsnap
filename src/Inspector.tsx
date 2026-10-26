@@ -14,7 +14,26 @@ const POSITION: { key: FieldKey; label: string }[] = [
   { key: 'v', label: 'Bottom elevation' },
 ]
 
+export interface ArtworkEntry {
+  key: string
+  label: string
+  thumb: string | null
+  status: 'new' | 'unsaved' | 'saved' | 'detached'
+}
+const STATUS_LABEL: Record<ArtworkEntry['status'], string> = { new: 'Not saved yet', unsaved: 'Unsaved changes', saved: 'Saved', detached: 'Not on this wall' }
+
 interface Props {
+  artworks: ArtworkEntry[]
+  selectedKey: string | null
+  onSelect: (key: string) => void
+  onAdd: () => void
+  onDelete: () => void
+  confirmDelete: boolean
+  onConfirmDelete: () => void
+  onCancelDelete: () => void
+  deleting: boolean
+  canDelete: boolean
+  canAdd: boolean
   text: Record<string, string>
   disabled: boolean
   valid: Record<FieldKey, boolean>
@@ -80,6 +99,18 @@ export function Inspector(p: Props) {
         </div>
       )}
 
+      {p.confirmDelete && (
+        // Deleting removes the item from FloorGen (to its trash). "Keep" is the safe default.
+        <div className={styles.confirm} role="alertdialog" aria-labelledby="delete-confirm-title" data-testid="delete-confirm" onKeyDown={(e) => e.key === 'Escape' && p.onCancelDelete()}>
+          <strong id="delete-confirm-title">Delete this artwork from FloorGen?</strong>
+          <p>Only the selected artwork is removed (FloorGen keeps it in its trash). The others on this wall are not touched.</p>
+          <div className={styles.confirmActions}>
+            <button type="button" className={styles.reload} autoFocus onClick={p.onCancelDelete}>Keep it</button>
+            <button type="button" className={styles.danger} onClick={p.onConfirmDelete}>Delete artwork</button>
+          </div>
+        </div>
+      )}
+
       {prominent ? (
         // Failures stay prominent and actionable.
         <div className={[styles.card, styles[p.save]].filter(Boolean).join(' ')} role="alert" data-testid="status-card">
@@ -114,6 +145,36 @@ export function Inspector(p: Props) {
           <span aria-hidden="true">{SAVE_GLYPH[p.save]}</span> <span data-testid="message">{p.detail}</span>
         </p>
       )}
+
+      <fieldset className={styles.list} data-testid="artwork-list">
+        <legend>Artworks on this wall</legend>
+        <ul>
+          {p.artworks.map((a, i) => (
+            <li key={a.key}>
+              <button
+                type="button"
+                className={styles.entry}
+                aria-pressed={a.key === p.selectedKey}
+                data-testid="artwork-entry"
+                data-status={a.status}
+                onClick={() => p.onSelect(a.key)}
+              >
+                {a.thumb ? <img className={styles.entryThumb} src={a.thumb} alt="" /> : <span className={styles.entryThumbEmpty} aria-hidden="true" />}
+                <span className={styles.entryText}>
+                  <span className={styles.entryName} title={a.label}>{a.label}{p.artworks.length > 1 ? ` (${i + 1})` : ''}</span>
+                  <span className={styles.entryState}>{STATUS_LABEL[a.status]}</span>
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+        <div className={styles.listActions}>
+          <button type="button" className={styles.secondary} onClick={p.onAdd} disabled={!p.canAdd} data-testid="add-artwork">+ Add artwork</button>
+          <button type="button" className={styles.dangerLink} onClick={p.onDelete} disabled={!p.canDelete} aria-busy={p.deleting} data-testid="delete-artwork">
+            {p.deleting ? 'Deleting…' : 'Delete selected artwork'}
+          </button>
+        </div>
+      </fieldset>
 
       <fieldset className={styles.imageBox}>
         <legend>Artwork image</legend>
