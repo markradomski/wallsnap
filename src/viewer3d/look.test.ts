@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { describe, expect, it } from 'vitest'
-import { categoryOf, colourOfMaterialName, finishFor, orbitPosition, shadowBounds, type Category } from './look'
+import { categoryOf, colourOfMaterialName, FLOOR_DEPTH_BIAS, finishFor, orbitPosition, shadowBounds, type Category } from './look'
 import type { V3 } from './transform'
 
 describe('categoryOf', () => {
@@ -104,5 +104,14 @@ describe('orbitPosition', () => {
     const p = orbitPosition(focus, { x: -1, z: 0 }, 0, 0, 10) // a wall facing west
     expect(p[0]).toBeCloseTo(-5, 9)
     expect(p[2]).toBeCloseTo(5, 9)
+  })
+})
+
+describe('floor depth bias', () => {
+  it('pulls only floor slabs towards the camera, to beat the coplanar caps of the storey below', () => {
+    expect(finishFor('floors').depthBias).toEqual(FLOOR_DEPTH_BIAS)
+    expect(FLOOR_DEPTH_BIAS.factor).toBeLessThan(0)
+    expect(FLOOR_DEPTH_BIAS.units).toBeLessThan(0)
+    for (const c of ['walls', 'furniture', 'stairs', null] as const) expect(finishFor(c).depthBias).toBeNull()
   })
 })

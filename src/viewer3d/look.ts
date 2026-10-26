@@ -18,7 +18,17 @@ export interface Finish {
   metalness: number
   castShadow: boolean
   receiveShadow: boolean
+  /** Depth bias towards the camera (WebGL polygon offset), or null for none. */
+  depthBias: { factor: number; units: number } | null
 }
+
+/**
+ * FloorGen's slab is a single flat surface at the storey's base height (Y = 2.2 m for the first floor), and the walls of the
+ * storey below end in cap faces at exactly that height, so the two are coplanar and fight for the pixel: streaks and dotted
+ * lines on the floor, worst around stairwell openings where the caps are exposed. Pulling the slab a hair towards the camera
+ * lets it win everywhere it exists and changes nothing else: the openings in it stay open, and no coordinates move.
+ */
+export const FLOOR_DEPTH_BIAS = { factor: -1, units: -2 }
 
 /**
  * Subtle, justified differences only. FloorGen exports every surface as matte (roughness 0.9); floors read slightly
@@ -27,11 +37,11 @@ export interface Finish {
  */
 export function finishFor(category: Category | null): Finish {
   switch (category) {
-    case 'walls': return { roughness: 0.92, metalness: 0, castShadow: true, receiveShadow: true }
-    case 'floors': return { roughness: 0.95, metalness: 0, castShadow: false, receiveShadow: true }
-    case 'furniture': return { roughness: 0.7, metalness: 0, castShadow: true, receiveShadow: true }
-    case 'stairs': return { roughness: 0.85, metalness: 0, castShadow: true, receiveShadow: true }
-    default: return { roughness: 0.9, metalness: 0, castShadow: false, receiveShadow: false }
+    case 'walls': return { roughness: 0.92, metalness: 0, castShadow: true, receiveShadow: true, depthBias: null }
+    case 'floors': return { roughness: 0.95, metalness: 0, castShadow: false, receiveShadow: true, depthBias: FLOOR_DEPTH_BIAS }
+    case 'furniture': return { roughness: 0.7, metalness: 0, castShadow: true, receiveShadow: true, depthBias: null }
+    case 'stairs': return { roughness: 0.85, metalness: 0, castShadow: true, receiveShadow: true, depthBias: null }
+    default: return { roughness: 0.9, metalness: 0, castShadow: false, receiveShadow: false, depthBias: null }
   }
 }
 

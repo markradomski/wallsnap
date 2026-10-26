@@ -88,6 +88,11 @@ export function applyFinishes(root: THREE.Object3D): LookReport {
     const mat = src.clone() // shared materials differ by category: never edit them in place
     mat.roughness = finish.roughness
     mat.metalness = finish.metalness
+    if (finish.depthBias) {
+      mat.polygonOffset = true
+      mat.polygonOffsetFactor = finish.depthBias.factor
+      mat.polygonOffsetUnits = finish.depthBias.units
+    }
     m.material = mat
     m.castShadow = finish.castShadow
     m.receiveShadow = finish.receiveShadow
