@@ -1,5 +1,16 @@
 import { expect, test, type Page } from '@playwright/test'
 
+/** Apply is disabled while nothing has changed, so a test that wants to save first makes one small edit if needed. */
+const applyAll = async (page: import('@playwright/test').Page) => {
+  const b = page.getByRole('button', { name: /^Apply all changes/ })
+  if (await b.isDisabled()) {
+    const f = page.getByLabel('Bottom elevation')
+    await f.fill(String(Number(await f.inputValue()) + 1))
+  }
+  await b.click()
+}
+
+
 // Mutating tests use the west/east walls of Room A; workers share one mock server (see ui.spec.ts).
 const pickWall = async (page: Page, wall: string) => {
   await page.getByLabel('Floor').selectOption({ label: 'First floor' })
@@ -106,7 +117,7 @@ test.describe('2. concise save confirmation', () => {
   })
 
   test('a verified save is a small collapsed disclosure, not a second success panel', async ({ page }) => {
-    await page.getByRole('button', { name: 'Apply to FloorGen' }).click()
+    await applyAll(page)
     await expect(status(page)).toHaveAttribute('data-state', 'verified')
     await expect(page.getByTestId('status-card')).toHaveCount(0) // no big panel
     const details = page.locator('details')
@@ -121,7 +132,7 @@ test.describe('2. concise save confirmation', () => {
   })
 
   test('verified clears as soon as local changes begin', async ({ page }) => {
-    await page.getByRole('button', { name: 'Apply to FloorGen' }).click()
+    await applyAll(page)
     await expect(status(page)).toHaveAttribute('data-state', 'verified')
     await page.getByLabel('Bottom elevation').fill('150')
     await expect(status(page)).toHaveAttribute('data-state', 'unsaved')
@@ -131,7 +142,7 @@ test.describe('2. concise save confirmation', () => {
 
   test('failures stay prominent: an alert card, never a quiet note', async ({ page }) => {
     await page.route('**/api/artwork', (r) => r.fulfill({ status: 422, json: { error: 'FloorGen rejected the placement: nope', code: 'VALIDATION_FAILED' } }))
-    await page.getByRole('button', { name: 'Apply to FloorGen' }).click()
+    await applyAll(page)
     const card = page.getByTestId('status-card')
     await expect(card).toBeVisible()
     await expect(card).toHaveAttribute('role', 'alert')
@@ -146,7 +157,7 @@ test.describe('2. concise save confirmation', () => {
       await gate
       await route.continue()
     })
-    await page.getByRole('button', { name: 'Apply to FloorGen' }).click()
+    await applyAll(page)
     await expect(status(page)).toHaveAttribute('data-state', 'saving')
     await expect(page.locator('details')).toHaveCount(0)
     release()
@@ -271,7 +282,7 @@ test('tablet width: stacked layout, no overflow, inspector reachable', async ({ 
   expect(insp.y).toBeGreaterThanOrEqual(stage.y + stage.height - 1)
   // Regression: the stacked rows must not stretch to the viewport, leaving a blank band under the drawing.
   expect(insp.y - (stage.y + stage.height)).toBeLessThan(90)
-  await expect(page.getByRole('button', { name: 'Apply to FloorGen' })).toBeVisible()
+  await expect(page.getByRole('button', { name: /^Apply all changes/ })).toBeVisible()
 })
 
 test('phone: the editor starts at the top and Apply stays within one short scroll', async ({ page }) => {
@@ -282,10 +293,10 @@ test('phone: the editor starts at the top and Apply stays within one short scrol
   await pickWall(page, 'north wall, 600 cm')
   const stage = (await page.getByTestId('elevation').boundingBox())!
   expect(stage.y).toBeLessThan(220)
-  const apply = (await page.getByRole('button', { name: 'Apply to FloorGen' }).boundingBox())!
+  const apply = (await page.getByRole('button', { name: /^Apply all changes/ }).boundingBox())!
   expect(apply.y + apply.height).toBeLessThanOrEqual(844 * 1.25)
-  await page.getByRole('button', { name: 'Apply to FloorGen' }).scrollIntoViewIfNeeded()
-  await expect(page.getByRole('button', { name: 'Apply to FloorGen' })).toBeVisible()
+  await page.getByRole('button', { name: /^Apply all changes/ }).scrollIntoViewIfNeeded()
+  await expect(page.getByRole('button', { name: /^Apply all changes/ })).toBeVisible()
 })
 
 test('loading a wall never flashes empty inputs or a spurious "invalid" state', async ({ page }) => {

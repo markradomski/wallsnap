@@ -13,8 +13,12 @@ async function saveOn(page: Page, floor: 'First floor' | 'Ground floor', wall: s
   await page.getByLabel('Horizontal position').fill(u)
   await page.getByLabel('Bottom elevation').fill(v)
   if (image) await page.getByTestId('image-input').setInputFiles(await makeImage(page, 200, 120))
-  await page.getByRole('button', { name: 'Apply to FloorGen' }).click()
-  await expect(page.getByTestId('save-status')).toHaveAttribute('data-state', 'verified')
+  // The wall may already hold this very artwork from an earlier test (the mock keeps its state): then there is nothing to apply.
+  const apply = page.getByRole('button', { name: /^Apply all changes/ })
+  if (await apply.isEnabled()) {
+    await apply.click()
+    await expect(page.getByTestId('save-status')).toHaveAttribute('data-state', 'verified')
+  }
 }
 /** A (north), B (east, with an image) on the first floor, C on the ground floor (slanted wall). Returns their saved items. */
 async function saveThree(page: Page) {

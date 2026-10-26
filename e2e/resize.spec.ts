@@ -1,5 +1,16 @@
 import { expect, test, type Page } from '@playwright/test'
 
+/** Apply is disabled while nothing has changed, so a test that wants to save first makes one small edit if needed. */
+const applyAll = async (page: import('@playwright/test').Page) => {
+  const b = page.getByRole('button', { name: /^Apply all changes/ })
+  if (await b.isDisabled()) {
+    const f = page.getByLabel('Bottom elevation')
+    await f.fill(String(Number(await f.inputValue()) + 1))
+  }
+  await b.click()
+}
+
+
 const num = async (page: Page, label: string) => Number(await page.getByLabel(label).inputValue())
 const read = async (page: Page) => ({
   width: await num(page, 'Width'),
@@ -122,7 +133,7 @@ test('a success message is cleared once the artwork is edited again', async ({ p
   // Applies, so it uses its own wall (west): workers share one mock server.
   await page.getByRole('combobox').nth(1).selectOption({ label: 'Room A — west wall, 400 cm' })
   await expect(page.getByTestId('artwork')).toBeVisible()
-  await page.getByRole('button', { name: 'Apply to FloorGen' }).click()
+  await applyAll(page)
   await expect(page.getByTestId('message')).toContainText('Verified in FloorGen')
   await drag(page, 'hit-e', 30, 0)
   await expect(page.getByTestId('message')).not.toContainText('Verified')

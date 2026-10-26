@@ -92,3 +92,7 @@ kbd { padding: 0 4px; font: inherit; font-size: 11px; background: var(--surface-
 .listActions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; align-items: center; }
 .dangerLink { padding: 6px 4px; font-size: 12px; color: var(--danger); background: transparent; border: 0; text-decoration: underline; cursor: pointer; min-height: 32px; }
 .dangerLink:disabled { color: var(--text-muted); cursor: not-allowed; text-decoration: none; }
+
+.entry[data-status='invalid'] { border-color: var(--danger); }
+.entry[data-status='invalid'] .entryState, .entryProblem { color: var(--danger); }
+.entryProblem { font-size: 12px; }

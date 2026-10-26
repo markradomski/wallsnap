@@ -1,8 +1,20 @@
 import { expect, test } from '@playwright/test'
 import { box, buildGlb, mockTownhouse, type GenericSpec } from '../src/viewer3d/glbFixture'
 import {
+
   WALLS, debug3d, expectedFrame, glbFile, importModel, makeImage, openWall, planOf, ready3d, state3d, to2d, to3d, trackWrites,
 } from './helpers3d'
+
+/** Apply is disabled while nothing has changed, so a test that wants to save first makes one small edit if needed. */
+const applyAll = async (page: import('@playwright/test').Page) => {
+  const b = page.getByRole('button', { name: /^Apply all changes/ })
+  if (await b.isDisabled()) {
+    const f = page.getByLabel('Bottom elevation')
+    await f.fill(String(Number(await f.inputValue()) + 1))
+  }
+  await b.click()
+}
+
 
 // Every test gets a fresh browser profile (empty IndexedDB). Walls that other specs save on are avoided for anything that saves:
 // the slanted Studio east wall is used for saving here; Room A walls are only previewed.
@@ -173,7 +185,7 @@ test.describe('live preview of unsaved edits (slanted Studio east wall, saving)'
     expect(writes).toEqual([])
 
     // Apply: exactly one write. The saved item sits where the preview showed it.
-    await page.getByRole('button', { name: 'Apply to FloorGen' }).click()
+    await applyAll(page)
     await expect(page.getByTestId('save-status')).toHaveAttribute('data-state', 'verified')
     expect(writes.filter((x) => x.startsWith('PUT'))).toHaveLength(1)
     expect(writes).toHaveLength(1)
@@ -207,7 +219,7 @@ test.describe('the model\'s generic artwork stand-in', () => {
   /** Saves an artwork on the Studio east wall, then returns what FloorGen holds, to build models around. */
   async function saved(page: import('@playwright/test').Page) {
     await openWall(page, 'Ground floor', WALLS.studioEast)
-    await page.getByRole('button', { name: 'Apply to FloorGen' }).click()
+    await applyAll(page)
     await expect(page.getByTestId('save-status')).toHaveAttribute('data-state', 'verified')
     const plan = await planOf(page, 'f_ground', 'gs_east')
     return plan.item!

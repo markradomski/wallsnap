@@ -62,7 +62,7 @@ test('openings sit behind the artwork, which stays draggable and resizable over 
   await open(page, 'north wall, 600 cm')
   await page.getByLabel('Horizontal position').fill('200')
   await page.getByLabel('Bottom elevation').fill('100')
-  const apply = page.getByRole('button', { name: 'Apply to FloorGen' })
+  const apply = page.getByRole('button', { name: /^Apply all changes/ })
   await expect(page.getByTestId('opening')).toHaveAttribute('data-conflict', 'true')
   await expect(page.getByTestId('opening-conflict')).toHaveCount(1)
   await expect(apply).toBeDisabled()

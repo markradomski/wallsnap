@@ -16,7 +16,7 @@ const open = async (page: Page, wall = WALL, floor = 'Ground floor') => {
 const entries = (page: Page) => page.getByTestId('artwork-entry')
 const field = (page: Page, label: string) => page.getByLabel(label)
 const num = async (page: Page, label: string) => Number(await field(page, label).inputValue())
-const applyBtn = (page: Page) => page.getByRole('button', { name: 'Apply to FloorGen' })
+const applyBtn = (page: Page) => page.getByRole('button', { name: /^Apply all changes/ })
 const saved = (page: Page) => expect(page.getByTestId('save-status')).toHaveAttribute('data-state', 'verified')
 
 async function place(page: Page, u: string, v: string) {
@@ -66,14 +66,12 @@ test('add three artworks with three images, edit each independently, save, reloa
   await entries(page).nth(1).click()
   const mid = { u: await num(page, 'Horizontal position'), v: await num(page, 'Bottom elevation'), w: await num(page, 'Width'), h: await num(page, 'Height') }
 
-  // 3. save each, one at a time: every save creates one new FloorGen item
-  for (let i = 0; i < 3; i++) {
-    await entries(page).nth(i).click()
-    await applyBtn(page).click()
-    await saved(page)
-    expect((await apiWall(page)).artworks).toHaveLength(i + 1)
-    await expect(entries(page).nth(i)).toContainText('Saved')
-  }
+  // 3. one Apply saves all three: each is a new FloorGen item
+  await expect(page.getByRole('button', { name: /^Apply all changes/ })).toHaveText('Apply all changes (3)')
+  await page.getByRole('button', { name: /^Apply all changes/ }).click()
+  await saved(page)
+  expect((await apiWall(page)).artworks).toHaveLength(3)
+  for (let i = 0; i < 3; i++) await expect(entries(page).nth(i)).toContainText('Saved')
   const ids = (await apiWall(page)).artworks.map((a) => a.id)
   expect(new Set(ids).size).toBe(3)
   expect(writes.filter((w) => w.startsWith('PUT'))).toHaveLength(3)

@@ -59,7 +59,8 @@ test.describe('the Reload button', () => {
     const btn = reloadButton(page)
     await expect(btn).toBeVisible()
     await expect(btn.locator('svg')).toHaveCount(1)
-    await page.getByRole('button', { name: 'Apply to FloorGen' }).focus()
+    await page.getByLabel('Bottom elevation').fill('131') // Apply is only enabled when something changed
+    await page.getByRole('button', { name: /^Apply all changes/ }).focus()
     await page.keyboard.press('Tab')
     await expect(btn).toBeFocused()
   })
@@ -73,7 +74,7 @@ test.describe('the Reload button', () => {
     await expect(reloadButton(page)).toHaveText(/Reloading/)
     await expect(reloadButton(page)).toBeDisabled()
     await expect(reloadButton(page)).toHaveAttribute('aria-busy', 'true')
-    await expect(page.getByRole('button', { name: 'Apply to FloorGen' })).toBeDisabled()
+    await expect(page.getByRole('button', { name: /^Apply all changes/ })).toBeDisabled()
     release()
     await expect(reloadButton(page)).toHaveText(/Reload from FloorGen/)
     await expect(reloadButton(page)).toBeEnabled()
@@ -115,7 +116,7 @@ test.describe('reading the current FloorGen state', () => {
     await reloadButton(page).click()
     await expect(page.getByTestId('message')).toContainText('revision 1010')
     await page.getByLabel('Horizontal position').fill('450')
-    await page.getByRole('button', { name: 'Apply to FloorGen' }).click()
+    await page.getByRole('button', { name: /^Apply all changes/ }).click()
     await expect.poll(() => puts.length).toBe(1)
     expect(puts[0]).toMatchObject({ rev: 1010, itemId: 'i_live1', artwork: { u: 450 } })
   })
@@ -123,7 +124,7 @@ test.describe('reading the current FloorGen state', () => {
   test('before any Reload, Apply carries the id loaded with the wall', async ({ page }) => {
     const { puts } = await setup(page)
     await page.getByLabel('Horizontal position').fill('500')
-    await page.getByRole('button', { name: 'Apply to FloorGen' }).click()
+    await page.getByRole('button', { name: /^Apply all changes/ }).click()
     await expect.poll(() => puts.length).toBe(1)
     expect(puts[0]).toMatchObject({ rev: 1000, itemId: 'i_live1' })
   })
@@ -223,7 +224,7 @@ test.describe('when the artwork is no longer on the wall', () => {
     await expect(page.getByTestId('handle-se')).toHaveCount(0)
     await expect(page.getByLabel('Horizontal position')).toBeDisabled()
     await expect(page.getByLabel('Horizontal position')).toHaveValue('')
-    await expect(page.getByRole('button', { name: 'Apply to FloorGen' })).toBeDisabled()
+    await expect(page.getByRole('button', { name: /^Apply all changes/ })).toBeDisabled()
   })
 
   test('recovery drafts it back with its own size; Apply then moves the same artwork id', async ({ page }) => {
@@ -237,7 +238,7 @@ test.describe('when the artwork is no longer on the wall', () => {
     expect(await inputs(page)).toEqual({ width: 80, height: 50, u: 300, v: 130 }) // its own size, centred on the wall
     await expect(page.getByTestId('artwork')).toBeVisible()
     await page.getByLabel('Horizontal position').fill('450')
-    await page.getByRole('button', { name: 'Apply to FloorGen' }).click()
+    await page.getByRole('button', { name: /^Apply all changes/ }).click()
     await expect.poll(() => puts.length).toBe(1)
     expect(puts[0]).toMatchObject({ rev: 1020, itemId: 'i_live1', artwork: { width: 80, height: 50, u: 450, v: 130 } })
   })
@@ -312,7 +313,7 @@ test('Reload is unavailable while a save is in flight, and Apply while a reload 
   const { server } = await setup(page)
   server.putGate = new Promise<void>((r) => (release = r))
   await page.getByLabel('Horizontal position').fill('450')
-  await page.getByRole('button', { name: 'Apply to FloorGen' }).click()
+  await page.getByRole('button', { name: /^Apply all changes/ }).click()
   await expect(status(page)).toHaveAttribute('data-state', 'saving')
   await expect(reloadButton(page)).toBeDisabled()
   release()

@@ -24,13 +24,13 @@ test('Open in FloorGen 3D is a keyboard-reachable link that opens a new tab and 
   await expect(link).toHaveAttribute('rel', /noopener/)
   await expect(link).toBeVisible()
   // Sits with Apply in the same action group.
-  const apply = await page.getByRole('button', { name: 'Apply to FloorGen' }).boundingBox()
+  const apply = await page.getByRole('button', { name: /^Apply all changes/ }).boundingBox()
   const lb = (await link.boundingBox())!
   expect(Math.abs(lb.y - apply!.y)).toBeLessThan(60)
 
   // Make an unsaved edit, then reach the link with the keyboard only.
   await page.getByLabel('Horizontal position').fill('450')
-  await page.getByRole('button', { name: 'Apply to FloorGen' }).focus()
+  await page.getByRole('button', { name: /^Apply all changes/ }).focus()
   await page.keyboard.press('Tab')
   await expect(page.getByRole('button', { name: 'Reload from FloorGen' })).toBeFocused()
   await page.keyboard.press('Tab')
@@ -46,7 +46,7 @@ test('Open in FloorGen 3D is a keyboard-reachable link that opens a new tab and 
 
 test('the buttons stack when the inspector is too narrow for both', async ({ page }) => {
   await page.setViewportSize({ width: 250, height: 700 })
-  const apply = (await page.getByRole('button', { name: 'Apply to FloorGen' }).boundingBox())!
+  const apply = (await page.getByRole('button', { name: /^Apply all changes/ }).boundingBox())!
   const lb = (await page.getByRole('link', { name: /Open in FloorGen 3D/ }).boundingBox())!
   expect(lb.y).toBeGreaterThan(apply.y + apply.height - 1)
   expect(lb.x + lb.width).toBeLessThanOrEqual(250)

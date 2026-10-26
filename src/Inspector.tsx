@@ -18,9 +18,11 @@ export interface ArtworkEntry {
   key: string
   label: string
   thumb: string | null
-  status: 'new' | 'unsaved' | 'saved' | 'detached'
+  status: 'new' | 'unsaved' | 'saved' | 'detached' | 'invalid'
+  /** Why it cannot be applied yet (door, window or wall problems), for an artwork with pending changes. */
+  problems?: string[]
 }
-const STATUS_LABEL: Record<ArtworkEntry['status'], string> = { new: 'Not saved yet', unsaved: 'Unsaved changes', saved: 'Saved', detached: 'Not on this wall' }
+const STATUS_LABEL: Record<ArtworkEntry['status'], string> = { new: 'Not saved yet', unsaved: 'Unsaved changes', saved: 'Saved', detached: 'Not on this wall', invalid: 'Fix before applying' }
 
 interface Props {
   artworks: ArtworkEntry[]
@@ -44,6 +46,10 @@ interface Props {
   detached: Detached | null
   onPlaceBack: () => void
   canApply: boolean
+  /** How many artworks on this wall have changes that Apply would save. */
+  pendingCount: number
+  /** Names the artworks that block Apply, when any do. */
+  blockedNote: string | null
   onApply: () => void
   reloading: boolean
   canReload: boolean
@@ -163,11 +169,13 @@ export function Inspector(p: Props) {
                 <span className={styles.entryText}>
                   <span className={styles.entryName} title={a.label}>{a.label}{p.artworks.length > 1 ? ` (${i + 1})` : ''}</span>
                   <span className={styles.entryState}>{STATUS_LABEL[a.status]}</span>
+                  {a.status === 'invalid' && a.problems?.map((m) => <span key={m} className={styles.entryProblem}>{m}</span>)}
                 </span>
               </button>
             </li>
           ))}
         </ul>
+        {p.blockedNote && <p className={styles.help} role="status" data-testid="apply-blocked">{p.blockedNote}</p>}
         <div className={styles.listActions}>
           <button type="button" className={styles.secondary} onClick={p.onAdd} disabled={!p.canAdd} data-testid="add-artwork">+ Add artwork</button>
           <button type="button" className={styles.dangerLink} onClick={p.onDelete} disabled={!p.canDelete} aria-busy={p.deleting} data-testid="delete-artwork">
@@ -252,7 +260,7 @@ export function Inspector(p: Props) {
       </p>
 
       <div className={styles.actions}>
-        <button type="submit" className={styles.primary} disabled={!p.canApply}>Apply to FloorGen</button>
+        <button type="submit" className={styles.primary} disabled={!p.canApply}>{p.pendingCount > 1 ? `Apply all changes (${p.pendingCount})` : 'Apply all changes'}</button>
         <button type="button" className={styles.secondary} onClick={p.onReload} disabled={!p.canReload} aria-busy={p.reloading}>
           <svg className={p.reloading ? styles.spin : undefined} viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
             <path d="M13.5 8a5.5 5.5 0 1 1-1.7-3.97M13.5 2v3.2h-3.2" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />

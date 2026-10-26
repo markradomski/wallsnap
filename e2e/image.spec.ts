@@ -365,7 +365,7 @@ test.describe('persistence in this browser', () => {
     await open(page)
     await expect(page.getByTestId('thumbnail')).toHaveCount(0)
     await expect(note(page)).toHaveCount(0)
-    await expect(page.getByRole('button', { name: 'Apply to FloorGen' })).toBeEnabled()
+    await expect(page.getByRole('button', { name: /^Apply all changes/ })).toBeEnabled()
   })
 
   for (const kind of ['garbage-png', 'string'] as const) {
@@ -379,7 +379,7 @@ test.describe('persistence in this browser', () => {
       await expect(page.getByTestId('artwork-image')).toHaveCount(0)
       // The rest of the editor works: geometry can still be edited and applied.
       await page.getByLabel('Horizontal position').fill('250')
-      await expect(page.getByRole('button', { name: 'Apply to FloorGen' })).toBeEnabled()
+      await expect(page.getByRole('button', { name: /^Apply all changes/ })).toBeEnabled()
       // And a replacement fixes it.
       await upload(page, await makeImage(page, 100, 100))
       await expect(note(page)).toHaveCount(0)
@@ -416,7 +416,7 @@ test.describe('FloorGen receives geometry only', () => {
     expect(await storedKeys(page)).toEqual(['mock-project/draft/f_ground/gs_south'])
     expect(requests.filter((r) => r.method !== 'GET')).toEqual([]) // choosing an image never writes anything
 
-    await page.getByRole('button', { name: 'Apply to FloorGen' }).click()
+    await page.getByRole('button', { name: /^Apply all changes/ }).click()
     await expect(page.getByTestId('save-status')).toHaveAttribute('data-state', 'verified')
     await expect(page.getByTestId('message')).toContainText('Verified in FloorGen: created artwork 60×30 cm')
 
@@ -438,7 +438,7 @@ test.describe('FloorGen receives geometry only', () => {
 
     // A second Apply updates the same artwork id.
     await page.getByLabel('Horizontal position').fill('350')
-    await page.getByRole('button', { name: 'Apply to FloorGen' }).click()
+    await page.getByRole('button', { name: /^Apply all changes/ }).click()
     await expect(page.getByTestId('message')).toContainText('updated artwork')
     expect(JSON.parse(requests.filter((r) => r.method === 'PUT')[1].body).itemId).toBe(saved)
 

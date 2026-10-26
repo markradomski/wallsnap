@@ -43,15 +43,15 @@ test('drag, numeric adjust and apply', async ({ page }) => {
   await page.getByLabel('Bottom elevation').fill('130')
   await page.getByLabel('Height').fill('250')
   await expect(page.getByText('Height cannot exceed 200 cm.')).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Apply to FloorGen' })).toBeDisabled()
+  await expect(page.getByRole('button', { name: /^Apply all changes/ })).toBeDisabled()
   await page.getByLabel('Height').fill('50')
 
-  await page.getByRole('button', { name: 'Apply to FloorGen' }).click()
+  await page.getByRole('button', { name: /^Apply all changes/ }).click()
   await expect(page.getByTestId('message')).toContainText('Verified in FloorGen: created artwork 60×50 cm, horizontal position 450 cm, bottom elevation 130 cm')
 
   // Re-applying edits the same object (no duplicate).
   await centre.fill('300')
-  await page.getByRole('button', { name: 'Apply to FloorGen' }).click()
+  await page.getByRole('button', { name: /^Apply all changes/ }).click()
   await expect(page.getByTestId('message')).toContainText('updated artwork')
 })
 

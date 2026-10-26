@@ -1,5 +1,16 @@
 import { expect, test, type Page } from '@playwright/test'
 
+/** Apply is disabled while nothing has changed, so a test that wants to save first makes one small edit if needed. */
+const applyAll = async (page: import('@playwright/test').Page) => {
+  const b = page.getByRole('button', { name: /^Apply all changes/ })
+  if (await b.isDisabled()) {
+    const f = page.getByLabel('Bottom elevation')
+    await f.fill(String(Number(await f.inputValue()) + 1))
+  }
+  await b.click()
+}
+
+
 // Mutating tests use their own wall (east) because Playwright workers share one mock server.
 const pickWall = async (page: Page, wall: string) => {
   await page.getByLabel('Floor').selectOption({ label: 'First floor' })
@@ -138,7 +149,7 @@ test.describe('workspace layout', () => {
       await page.getByLabel(name).scrollIntoViewIfNeeded()
       await expect(page.getByLabel(name)).toBeVisible()
     }
-    await expect(page.getByRole('button', { name: 'Apply to FloorGen' })).toBeVisible()
+    await expect(page.getByRole('button', { name: /^Apply all changes/ })).toBeVisible()
   })
 
   test('the wall keeps its proportions at any window size', async ({ page }) => {
@@ -200,7 +211,7 @@ test('numeric controls are keyboard reachable in order and the nudge hint is sho
     await expect(page.getByLabel(next)).toBeFocused()
   }
   await page.keyboard.press('Tab')
-  await expect(page.getByRole('button', { name: 'Apply to FloorGen' })).toBeFocused()
+  await expect(page.getByRole('button', { name: /^Apply all changes/ })).toBeFocused()
 })
 
 test.describe('save states', () => {
@@ -214,11 +225,11 @@ test.describe('save states', () => {
     await page.getByLabel('Height').fill('250')
     await expect(status(page)).toHaveAttribute('data-state', 'invalid')
     await expect(page.getByTestId('status-card')).toContainText('Height cannot exceed 200 cm.')
-    await expect(page.getByRole('button', { name: 'Apply to FloorGen' })).toBeDisabled()
+    await expect(page.getByRole('button', { name: /^Apply all changes/ })).toBeDisabled()
     await page.getByLabel('Height').fill('45')
     await expect(status(page)).toHaveAttribute('data-state', 'new')
 
-    await page.getByRole('button', { name: 'Apply to FloorGen' }).click()
+    await applyAll(page)
     await expect(status(page)).toHaveAttribute('data-state', 'verified')
     await expect(status(page)).toContainText('Saved · verified')
     await expect(page.getByTestId('message')).toContainText('Verified in FloorGen')
@@ -227,7 +238,7 @@ test.describe('save states', () => {
     await expect(status(page)).toHaveAttribute('data-state', 'unsaved')
     await expect(page.getByTestId('message')).not.toContainText('Verified')
 
-    await page.getByRole('button', { name: 'Apply to FloorGen' }).click()
+    await applyAll(page)
     await expect(status(page)).toHaveAttribute('data-state', 'verified')
   })
 
@@ -238,7 +249,7 @@ test.describe('save states', () => {
       await gate
       await route.continue()
     })
-    await page.getByRole('button', { name: 'Apply to FloorGen' }).click()
+    await applyAll(page)
     await expect(status(page)).toHaveAttribute('data-state', 'saving')
     await expect(page.getByTestId('message')).not.toContainText('Verified')
     release()
@@ -249,20 +260,23 @@ test.describe('save states', () => {
     await page.route('**/api/artwork', (r) =>
       r.fulfill({ status: 409, json: { error: 'The FloorGen project changed since you loaded this wall. Reload before applying.', code: 'stale' } }),
     )
-    await page.getByRole('button', { name: 'Apply to FloorGen' }).click()
+    await applyAll(page)
     await expect(status(page)).toHaveAttribute('data-state', 'conflict')
     await expect(page.getByTestId('status-card')).toContainText('project changed')
-    await expect(page.getByRole('button', { name: 'Apply to FloorGen' })).toBeDisabled()
+    await expect(page.getByRole('button', { name: /^Apply all changes/ })).toBeDisabled()
     await page.unroute('**/api/artwork')
     await page.getByRole('button', { name: 'Reload from FloorGen' }).click()
+    await page.getByRole('button', { name: 'Discard and reload' }).click() // the edit that was being applied is still pending, so Reload asks first
     await expect(status(page)).not.toHaveAttribute('data-state', 'conflict')
-    await expect(page.getByRole('button', { name: 'Apply to FloorGen' })).toBeEnabled()
+    await expect(page.getByRole('button', { name: /^Apply all changes/ })).toBeDisabled() // nothing pending after the reload
+    await page.getByLabel('Bottom elevation').fill('99')
+    await expect(page.getByRole('button', { name: /^Apply all changes/ })).toBeEnabled()
   })
 
   test('a partial save describes what FloorGen actually holds', async ({ page }) => {
     const msg = 'Partially saved: it was resized to 90×50 cm, but moving it to the requested position failed (nope). Reload to see the actual state; FloorGen holds the changes below.'
     await page.route('**/api/artwork', (r) => r.fulfill({ status: 502, json: { error: msg, code: 'partial' } }))
-    await page.getByRole('button', { name: 'Apply to FloorGen' }).click()
+    await applyAll(page)
     await expect(status(page)).toHaveAttribute('data-state', 'partial')
     await expect(page.getByTestId('status-card')).toContainText('resized to 90×50 cm')
     await expect(page.getByRole('button', { name: 'Reload from FloorGen' })).toBeVisible()
@@ -272,7 +286,7 @@ test.describe('save states', () => {
     await page.route('**/api/artwork', (r) =>
       r.fulfill({ status: 422, json: { error: 'FloorGen rejected the placement: The item is too tall.', code: 'VALIDATION_FAILED' } }),
     )
-    await page.getByRole('button', { name: 'Apply to FloorGen' }).click()
+    await applyAll(page)
     await expect(status(page)).toHaveAttribute('data-state', 'error')
     await expect(page.getByTestId('status-card')).toContainText('The item is too tall.')
     await page.getByLabel('Horizontal position').fill('120')

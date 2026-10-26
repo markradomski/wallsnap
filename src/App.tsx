@@ -6,7 +6,7 @@ import { clampToWall, round1, validate } from './geometry'
 import { DEFAULT_IMAGE_WIDTH_CM, acceptImageFile, decodeImage, frameForRatio, ratioDiffers } from './image'
 import { createImageStore, idbKV, itemKey, slotDraftKey } from './imageStore'
 import { Inspector, type FieldKey } from './Inspector'
-import { deriveSaveState, sameArtwork } from './saveState'
+import { deriveSaveState, sameArtwork, type SaveState } from './saveState'
 import { useTheme } from './theme'
 import { TopBar } from './TopBar'
 import type { Artwork, Detached, FloorSummary, PlanContext, WallState } from './types'
@@ -39,6 +39,8 @@ interface Slot {
 }
 
 const slotDirty = (s: Slot) => !!s.art && (!s.base || !sameArtwork(s.art, s.base))
+/** Needs saving: a new artwork, or a saved one whose size or place was changed. (A detached one has nothing to save.) */
+const slotPending = (s: Slot) => !!s.art && (!s.id || !s.base || !sameArtwork(s.art, s.base))
 /** Unsaved work worth keeping while another wall is shown. */
 const slotKept = (s: Slot) => slotDirty(s) || (!s.id && s.added)
 
@@ -273,30 +275,82 @@ export function App() {
   /** Any artwork on this wall with local work that a reload would throw away. */
   const anyDirty = dirty || slots.some((x) => x.key !== selKey && slotKept(x))
 
-  const apply = () => {
-    if (!state || !sel || !art || problems.length || saving || reloading || conflict || partial) return
-    const slot = sel
+  /**
+   * The artwork as the editor holds it right now. The selected one is read from the typed inputs (which may be mid-edit);
+   * the others from their slots.
+   */
+  const currentArt = (x: Slot): Artwork | null => (x.key === selKey ? (x.art ? parsed : null) : x.art)
+  const pendingSlots = slots.filter(slotPending)
+  /** Every pending artwork is checked against the wall (bounds, doors, windows) before anything is sent. */
+  const pendingProblems = new Map<string, string[]>()
+  if (state) for (const x of pendingSlots) {
+    const a = currentArt(x)
+    const p = a ? validate(state.wall, a) : []
+    if (p.length) pendingProblems.set(x.key, p)
+  }
+  const labelOf = (x: Slot) => `${x.image?.name ?? 'Untitled artwork'} (${slots.indexOf(x) + 1})`
+
+  /**
+   * Save every pending artwork on this wall, one after another (never in parallel: each write carries the revision the one
+   * before it produced). Each is verified by FloorGen's read-back before the next starts. If one fails, the ones already saved
+   * stay saved, the rest stay pending, and the message says which is which.
+   */
+  const apply = async () => {
+    if (!state || saving || deleting || reloading || conflict || partial || !pendingSlots.length || pendingProblems.size) return
+    const queue = pendingSlots.map((x) => ({ slot: x, art: currentArt(x)! }))
     setSaving(true)
     clearOutcome()
-    // A slot without a FloorGen id is a new artwork: it is created, never merged into one already on the wall.
-    putArtwork(state.wall.floorId, state.wall.id, parsed, state.rev, slot.id, !slot.id)
-      .then(async (r) => {
+    let rev = state.rev
+    const saved: string[] = []
+    let created = 0
+    let updated = 0
+    let lastRev = rev
+    try {
+      for (const [i, { slot, art: a }] of queue.entries()) {
+        let r
+        try {
+          // A slot without a FloorGen id is a new artwork: it is created, never merged into one already on the wall.
+          r = await putArtwork(state.wall.floorId, state.wall.id, a, rev, slot.id, !slot.id)
+        } catch (e) {
+          const rest = queue.slice(i).map((q) => labelOf(q.slot))
+          const progress = `${saved.length ? `Saved: ${saved.join(', ')}. ` : 'Nothing was saved. '}Still pending: ${rest.join(', ')}.`
+          const text = e instanceof Error ? e.message : 'Unexpected error'
+          if (e instanceof ApiError && (e.status === 409 || e.code === 'stale')) setConflict(`${text} ${progress}`)
+          else if (e instanceof ApiError && e.code === 'partial') setPartial(`${text} ${progress}`)
+          else setResult({ kind: 'error', text: `${labelOf(slot)} could not be saved: ${text} ${progress}` })
+          break
+        }
+        rev = r.rev
+        lastRev = r.rev
+        if (r.created) created++
+        else updated++
         // The artwork now has a persistent id: its draft image becomes that artwork's image (local only).
         const newKey = itemKey(projectId, r.artworkId)
         let nextImage = slot.image
         if (slot.image && slot.image.key !== newKey) {
           const moved = await store.move(slot.image.key, newKey)
           nextImage = { ...slot.image, key: newKey }
-          if (!moved.ok) setImageNote('The image is shown now but could not be kept for later in this browser storage.')
+          if (!moved.ok) setImageNote('An image is shown now but could not be kept for later in this browser storage.')
         }
-        setState((st) => (st ? { ...st, rev: r.rev } : st))
+        saved.push(labelOf(slot))
+        // Recorded at once: if a later one fails, this one is already saved under its id and is never created twice.
         patch(slot.key, { id: r.artworkId, art: r.artwork, base: r.artwork, detached: null, added: false, image: nextImage })
-        setText(format(r.artwork))
-        setVerified(true)
-        setResult({ kind: 'ok', text: `Verified in FloorGen: ${r.created ? 'created' : 'updated'} artwork ${describe(r.artwork)}. Re-read from FloorGen after saving (revision ${r.rev}).` })
-      })
-      .catch((e) => fail(e))
-      .finally(() => setSaving(false))
+        if (slot.key === selKey) setText(format(r.artwork))
+        setState((st) => (st ? { ...st, rev: r.rev } : st))
+        if (i === queue.length - 1) {
+          setVerified(true)
+          const what = [created && `${created} created`, updated && `${updated} updated`].filter(Boolean).join(', ')
+          setResult({
+            kind: 'ok',
+            text: queue.length === 1
+              ? `Verified in FloorGen: ${r.created ? 'created' : 'updated'} artwork ${describe(r.artwork)}. Re-read from FloorGen after saving (revision ${r.rev}).`
+              : `Saved all ${queue.length} pending artworks (${what}), each read back from FloorGen and verified (revision ${lastRev}).`,
+          })
+        }
+      }
+    } finally {
+      setSaving(false)
+    }
   }
 
   // ---- several artworks on one wall ----
@@ -432,11 +486,13 @@ export function App() {
     edit(clampToWall(state.wall, { ...art, ...frameForRatio(state.wall, image.ratio, art.width) }))
   }
 
-  const save = deriveSaveState({
+  const own = deriveSaveState({
     hasWall: !!state, loading, saving, conflict: !!conflict, partial: !!partial, error: result?.kind === 'error',
     detached: !!detached, hasItem: !!artworkId,
     problems: problems.length, baseline: sel?.id ? base : null, current: art, verified,
   })
+  // Another artwork on this wall with pending changes means the wall as a whole is not saved, whatever the selected one says.
+  const save: SaveState = (own === 'synced' || own === 'verified') && pendingSlots.length ? 'unsaved' : own
 
   const detail =
     conflict ?? partial ??
@@ -549,7 +605,8 @@ export function App() {
               key: x.key,
               label: x.image?.name ?? 'Untitled artwork',
               thumb: x.image?.url ?? null,
-              status: x.detached ? 'detached' : !x.id ? 'new' : x.art && x.base && sameArtwork(x.art, x.base) ? 'saved' : 'unsaved',
+              status: x.detached ? 'detached' : pendingProblems.has(x.key) ? 'invalid' : !x.id ? 'new' : slotPending(x) ? 'unsaved' : 'saved',
+              problems: x.key === selKey ? [] : (pendingProblems.get(x.key) ?? []), // the selected one's problems are in the status card already
             }))}
             selectedKey={selKey}
             onSelect={select}
@@ -562,7 +619,9 @@ export function App() {
             canDelete={!!sel && !saving && !deleting && !loading && !reloading}
             canAdd={!saving && !deleting && !loading && !reloading}
             onPlaceBack={placeBack}
-            canApply={!!art && !problems.length && !saving && !deleting && !loading && !reloading && !conflict && !partial}
+            canApply={pendingSlots.length > 0 && pendingProblems.size === 0 && !saving && !deleting && !loading && !reloading && !conflict && !partial}
+            pendingCount={pendingSlots.length}
+            blockedNote={pendingProblems.size ? `Fix ${pendingProblems.size === 1 ? 'the artwork' : `${pendingProblems.size} artworks`} marked below to apply: ${[...pendingProblems.keys()].map((k) => labelOf(slots.find((x) => x.key === k)!)).join(', ')}.` : null}
             onApply={apply}
             reloading={reloading}
             canReload={!loading && !saving && !reloading}
