@@ -5,12 +5,10 @@
 ![WallSnap 3D preview: the furnished first-floor living room with two paintings above the sofa](docs/images/wallsnap-3d-living-room-hero.webp)
 
 <p align="center">
-  <a href="#demo-video"><img src="docs/images/wallsnap-demo-video-thumbnail.webp" width="560" alt="Watch the 30-second demo"></a>
+  <a href="https://markradomski.github.io/app/wallsnap/"><img src="docs/images/wallsnap-demo-video-thumbnail.webp" width="560" alt="Watch the 30-second demo"></a>
   <br>
-  <a href="#demo-video"><strong>▶ Watch the 30-second demo</strong></a>
+  <a href="https://markradomski.github.io/app/wallsnap/"><strong>▶ Watch the 30-second demo</strong></a>
 </p>
-
-<!-- TODO: replace both "#demo-video" links above with the public video URL once it is hosted. -->
 
 ## Place artwork in 2D, to scale
 
@@ -145,4 +143,4 @@ Automated tests and live FloorGen verification are separate, and only the second
 
 The 30-second demo shows, in order: FloorGen's own 3D view of the first floor, the same room in WallSnap with the real paintings, editing the north wall in 2D (including a wall-boundary error), and a Walk through the living room. It was recorded read-only against the DEV project: nothing was applied or written to FloorGen.
 
-**Public link: not hosted yet.** <!-- TODO: add the public video URL here and in the thumbnail links at the top. -->
+**Watch it in the case study:** [markradomski.github.io/app/wallsnap](https://markradomski.github.io/app/wallsnap/)
