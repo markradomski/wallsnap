@@ -103,7 +103,8 @@ export function findStart(i: StartInput): StartResult {
   const faceTarget: V2 = { x: i.artwork.x + i.normal.x * 3, y: i.artwork.y + i.normal.y * 3 }
   const valid = (p: V2) =>
     isFree(p, i.colliders, margin) &&
-    !i.colliders.some((o) => segmentHits(o, p, faceTarget)) &&
+    // Furniture is below eye level, so a painting hung above a sofa is still in plain sight; walls and stairs block the view.
+    !i.colliders.some((o) => o.kind !== 'furniture' && segmentHits(o, p, faceTarget)) &&
     !i.walls.some((w) => segmentsCross(p, faceTarget, w.a, w.b))
   const candidates: { p: V2; cost: number }[] = []
   const base = Math.atan2(i.normal.y, i.normal.x)

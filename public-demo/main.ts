@@ -108,10 +108,16 @@ window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
   return url.origin === location.origin && url.pathname.startsWith('/api/') ? api(url, init) : realFetch(input, init)
 }
 
-/** The app's mock banner, relabelled for the public demo. */
+/**
+ * The app's mock banner, relabelled for the public demo. The 3D view's note that an artwork is missing from the export
+ * (asking for a FloorGen re-export) is hidden: the demo model deliberately has no artworks of its own.
+ */
 new MutationObserver(() => {
-  const p = [...document.querySelectorAll('p')].find((el) => el.textContent?.startsWith('MOCK ADAPTER'))
-  if (p) p.textContent = 'DEMO MODE: a static copy of the townhouse, not connected to FloorGen. Your images and placements stay in this browser.'
+  for (const el of document.querySelectorAll<HTMLElement>('p, div')) {
+    const t = el.textContent ?? ''
+    if (el.tagName === 'P' && t.startsWith('MOCK ADAPTER')) el.textContent = 'DEMO MODE: a static copy of the townhouse, not connected to FloorGen. Your images and placements stay in this browser.'
+    else if (t.startsWith('This artwork is not in the 3D model') && el.childElementCount === 0) el.style.display = 'none'
+  }
 }).observe(document.documentElement, { childList: true, subtree: true })
 
 await Promise.all([restore(), seedModel().catch(() => {})])
