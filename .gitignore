@@ -10,3 +10,7 @@ playwright-report
 *.pem
 *.key
 *.glb
+
+# Public static demo: build output is deployed, not committed; its sanitised model is committed.
+dist-demo
+!public-demo/townhouse.glb

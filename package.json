@@ -8,6 +8,7 @@
     "dev:server": "tsx --env-file-if-exists=.env server/index.ts",
     "dev:web": "vite",
     "build": "tsc --noEmit && vite build",
+    "build:demo": "vite build --config public-demo/vite.config.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "e2e": "playwright test"
